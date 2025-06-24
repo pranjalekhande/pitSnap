@@ -1,13 +1,36 @@
 import React, { useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 
 import CameraScreen from '../screens/camera/CameraScreen';
 import ChatScreen from '../screens/chat/ChatScreen';
 import ProfileScreen from '../screens/profile/ProfileScreen';
+import StoriesScreen from '../screens/stories/StoriesScreen';
+import StoryComposerScreen from '../screens/stories/StoryComposerScreen';
+import StoryViewerScreen from '../screens/stories/StoryViewerScreen';
+import MyStoriesScreen from '../screens/stories/MyStoriesScreen';
 
 const Tab = createBottomTabNavigator();
+const Stack = createStackNavigator();
+
+// Stories Stack Navigator
+function StoriesStackNavigator() {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        cardStyle: { backgroundColor: '#15151E' },
+      }}
+    >
+      <Stack.Screen name="StoriesFeed" component={StoriesScreen} />
+      <Stack.Screen name="StoryComposer" component={StoryComposerScreen} />
+      <Stack.Screen name="StoryViewer" component={StoryViewerScreen} />
+      <Stack.Screen name="MyStories" component={MyStoriesScreen} />
+    </Stack.Navigator>
+  );
+}
 
 export default function AppNavigation() {
   const [tabBarVisible, setTabBarVisible] = useState(true);
@@ -40,6 +63,15 @@ export default function AppNavigation() {
           options={{
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="chatbubbles" size={size} color={color} />
+            ),
+          }}
+        />
+        <Tab.Screen
+          name="Stories"
+          component={StoriesStackNavigator}
+          options={{
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="book" size={size} color={color} />
             ),
           }}
         />

@@ -140,18 +140,25 @@ export default function IndividualChatScreen({
   const handleViewMessage = async (message: Message) => {
     if (message.message_type === 'text') return;
     if (isMessageExpired(message)) return;
+    
+    // RULE: Sender can NEVER view their own media messages
+    if (message.sender_id === user?.id) {
+      Alert.alert('Cannot View', 'You cannot view media messages you sent');
+      return;
+    }
+    
     if (!message.media_url) {
       Alert.alert('Error', 'Media not available');
       return;
     }
 
-    // Check if message has already been viewed
+    // RULE: Recipients can only view media once
     if (message.first_viewed_at) {
-      Alert.alert('Opened', 'This message has already been viewed');
+      Alert.alert('Already Opened', 'This message has already been viewed and cannot be opened again');
       return;
     }
 
-    // Mark as viewed on first view
+    // Mark as viewed on first view (only for recipients)
     await markMessageAsFirstViewed(message.id);
 
     if (message.recipient_id === user?.id && !message.read_at) {

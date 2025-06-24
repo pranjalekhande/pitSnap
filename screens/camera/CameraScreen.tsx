@@ -9,7 +9,7 @@ import {
   Image,
   FlatList,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { VideoView, useVideoPlayer } from 'expo-video';
@@ -31,6 +31,7 @@ interface CameraScreenProps {
 }
 
 export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
+  const navigation = useNavigation();
   const [permission, requestPermission] = useCameraPermissions();
   const [mediaPermission, requestMediaPermission] = MediaLibrary.usePermissions();
   const [facing, setFacing] = useState<CameraType>('back');
@@ -695,8 +696,14 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
             <TouchableOpacity 
               style={styles.snapchatStoriesButton} 
               onPress={() => {
-                // TODO: Implement Stories functionality
-                Alert.alert('Coming Soon', 'Stories feature will be available soon!');
+                // Navigate to StoryComposer with the captured media
+                (navigation as any).navigate('Stories', {
+                  screen: 'StoryComposer',
+                  params: {
+                    mediaUri: capturedMedia.uri,
+                    mediaType: capturedMedia.type,
+                  }
+                });
               }}
               activeOpacity={0.8}
             >
