@@ -10,6 +10,9 @@ import {
   Image,
   PanResponder,
   Animated,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { VideoView, useVideoPlayer } from 'expo-video';
@@ -19,12 +22,33 @@ import {
   markMessageAsRead, 
   deleteMessage,
   isMessageExpired,
-  getTimeUntilExpiry,
+  sendMessage,
   type Message 
 } from '../../services/messagesService';
 import { useAuth } from '../../contexts/AuthContext';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+
+// Helper function to get time since message was sent
+const getTimeSinceSent = (createdAt: string): string => {
+  const now = new Date();
+  const sentTime = new Date(createdAt);
+  const diffMs = now.getTime() - sentTime.getTime();
+  
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  
+  if (diffDays > 0) {
+    return `${diffDays}d ago`;
+  } else if (diffHours > 0) {
+    return `${diffHours}h ago`;
+  } else if (diffMinutes > 0) {
+    return `${diffMinutes}m ago`;
+  } else {
+    return 'Just now';
+  }
+};
 
 interface IndividualChatScreenProps {
   friendId: string;
@@ -43,6 +67,9 @@ export default function IndividualChatScreen({
   const [viewingMessage, setViewingMessage] = useState<Message | null>(null);
   const [viewStartTime, setViewStartTime] = useState<number>(0);
   const viewTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const flatListRef = useRef<FlatList>(null);
+  const [messageText, setMessageText] = useState('');
+  const [sendingText, setSendingText] = useState(false);
 
   // Animation for tap-to-view
   const scaleAnim = useRef(new Animated.Value(0)).current;
@@ -63,6 +90,19 @@ export default function IndividualChatScreen({
     loadMessages();
   }, [friendId]);
 
+  // Auto-scroll when new messages arrive
+  useEffect(() => {
+    if (messages.length > 0 && !loading) {
+      setTimeout(() => {
+        if (flatListRef.current) {
+          flatListRef.current.scrollToEnd({
+            animated: true,
+          });
+        }
+      }, 100);
+    }
+  }, [messages.length, loading]);
+
   useEffect(() => {
     // Cleanup timeout on unmount
     return () => {
@@ -76,9 +116,31 @@ export default function IndividualChatScreen({
     try {
       const messagesList = await getMessagesWithFriend(friendId);
       
-      // Filter out expired messages
-      const validMessages = messagesList.filter(msg => !isMessageExpired(msg));
+      // Filter out expired messages and sort by creation time (oldest first, no inversion needed)
+      const validMessages = messagesList
+        .filter(msg => !isMessageExpired(msg))
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      
+      // Mark unread text messages as read (since they don't need "tap to view")
+      const unreadTextMessages = validMessages.filter(msg => 
+        msg.recipient_id === user?.id && 
+        !msg.read_at && 
+        msg.message_type === 'text'
+      );
+      
+      // Mark all unread text messages as read
+      await Promise.all(
+        unreadTextMessages.map(msg => markMessageAsRead(msg.id))
+      );
+      
       setMessages(validMessages);
+      
+      // Auto-scroll to bottom (latest messages) after messages load
+      setTimeout(() => {
+        if (flatListRef.current && validMessages.length > 0) {
+          flatListRef.current.scrollToEnd({ animated: false });
+        }
+      }, 200);
     } catch (error) {
       console.error('Error loading messages:', error);
     } finally {
@@ -140,10 +202,38 @@ export default function IndividualChatScreen({
       try {
         await deleteMessage(message.id);
         // Reload messages to update UI
-        loadMessages();
+        await loadMessages();
       } catch (error) {
         console.error('Error deleting viewed message:', error);
       }
+    }
+  };
+
+  const handleSendTextMessage = async () => {
+    if (!messageText.trim() || sendingText) return;
+
+    setSendingText(true);
+    try {
+      const success = await sendMessage(
+        friendId,
+        messageText.trim(),
+        null, // no media URL for text messages
+        'text',
+        24 // expires in 24 hours
+      );
+
+      if (success) {
+        setMessageText(''); // Clear input
+        // Reload messages to show the new one
+        await loadMessages();
+      } else {
+        Alert.alert('Error', 'Failed to send message. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error sending text message:', error);
+      Alert.alert('Error', 'Failed to send message. Please try again.');
+    } finally {
+      setSendingText(false);
     }
   };
 
@@ -195,13 +285,28 @@ export default function IndividualChatScreen({
           </TouchableOpacity>
         )}
         
-        <Text style={styles.messageTime}>
-          {new Date(item.created_at).toLocaleTimeString([], { 
-            hour: '2-digit', 
-            minute: '2-digit' 
-          })}
-          {item.expires_at && ` • ${getTimeUntilExpiry(item)}`}
-        </Text>
+        <View style={styles.messageFooter}>
+          <Text style={styles.messageTime}>
+            {getTimeSinceSent(item.created_at)}
+          </Text>
+          {/* Read Receipt Indicators - Only show on sent messages */}
+          {isFromMe && (
+            <View style={styles.readReceiptContainer}>
+              {item.read_at ? (
+                // Double checkmark for read messages (white)
+                <View style={styles.readReceiptRead}>
+                  <Ionicons name="checkmark" size={12} color="#FFFFFF" />
+                  <Ionicons name="checkmark" size={12} color="#FFFFFF" style={styles.secondCheckmark} />
+                </View>
+              ) : (
+                // Single checkmark for delivered messages (white, slightly transparent)
+                <View style={styles.readReceiptDelivered}>
+                  <Ionicons name="checkmark" size={12} color="rgba(255, 255, 255, 0.6)" />
+                </View>
+              )}
+            </View>
+          )}
+        </View>
       </View>
     );
   };
@@ -268,7 +373,10 @@ export default function IndividualChatScreen({
   }
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       <StatusBar style="light" />
       
       {/* Header */}
@@ -282,12 +390,27 @@ export default function IndividualChatScreen({
 
       {/* Messages */}
       <FlatList
+        ref={flatListRef}
         data={messages}
         renderItem={renderMessage}
         keyExtractor={(item) => item.id}
         style={styles.messagesList}
         contentContainerStyle={styles.messagesContent}
         showsVerticalScrollIndicator={false}
+        onContentSizeChange={() => {
+          // Auto-scroll to bottom when content changes
+          if (flatListRef.current) {
+            flatListRef.current.scrollToEnd({ animated: true });
+          }
+        }}
+        onLayout={() => {
+          // Auto-scroll to bottom on initial layout
+          if (flatListRef.current && messages.length > 0) {
+            setTimeout(() => {
+              flatListRef.current?.scrollToEnd({ animated: false });
+            }, 100);
+          }
+        }}
       />
 
       {/* Empty state */}
@@ -296,11 +419,38 @@ export default function IndividualChatScreen({
           <Text style={styles.emptyIcon}>📸</Text>
           <Text style={styles.emptyTitle}>No messages yet</Text>
           <Text style={styles.emptyText}>
-            Send a photo or video from the camera to start chatting!
+            Send a message or photo to start chatting!
           </Text>
         </View>
       )}
-    </View>
+
+      {/* Text Input */}
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={styles.textInput}
+          placeholder="Type a message..."
+          placeholderTextColor="#666"
+          value={messageText}
+          onChangeText={setMessageText}
+          multiline
+          maxLength={500}
+        />
+        <TouchableOpacity
+          style={[
+            styles.sendButton,
+            (!messageText.trim() || sendingText) && styles.sendButtonDisabled
+          ]}
+          onPress={handleSendTextMessage}
+          disabled={!messageText.trim() || sendingText}
+        >
+          <Ionicons 
+            name={sendingText ? 'hourglass' : 'send'} 
+            size={20} 
+            color="#FFFFFF" 
+          />
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -468,5 +618,61 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     opacity: 0.7,
+  },
+  // Text input styles
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#1E1E28',
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+  },
+  textInput: {
+    flex: 1,
+    backgroundColor: '#15151E',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#FFFFFF',
+    maxHeight: 100,
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  sendButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#E10600',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sendButtonDisabled: {
+    backgroundColor: '#666',
+    opacity: 0.5,
+  },
+  // Read receipt styles
+  messageFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  readReceiptContainer: {
+    marginLeft: 8,
+  },
+  readReceiptRead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  readReceiptDelivered: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  secondCheckmark: {
+    marginLeft: -6, // Overlap the checkmarks slightly
   },
 }); 
