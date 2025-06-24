@@ -72,7 +72,7 @@ export const getFriendsStories = async (): Promise<FriendWithStories[]> => {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
-  // Get all friends' stories that haven't expired
+  // Get all friends' stories that haven't expired (exclude own stories)
   const { data: storiesData, error } = await supabase
     .from('stories')
     .select(`
@@ -183,24 +183,34 @@ export const viewStory = async (storyId: string): Promise<boolean> => {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return false;
 
-  // Check if already viewed (use maybeSingle to avoid error if not found)
-  const { data: existing, error: checkError } = await supabase
+  // First check if this is the user's own story - don't count own views
+  const { data: story } = await supabase
+    .from('stories')
+    .select('user_id')
+    .eq('id', storyId)
+    .single();
+
+  if (!story) return false;
+
+  // Don't record views for own stories, but allow viewing
+  if (story.user_id === user.id) {
+    return true; // Allow viewing but don't record/count the view
+  }
+
+  // Check if already viewed first
+  const { data: existing } = await supabase
     .from('story_views')
     .select('id')
     .eq('story_id', storyId)
     .eq('viewer_id', user.id)
     .maybeSingle();
 
-  if (checkError) {
-    console.error('Error checking story view:', checkError);
-    return false;
-  }
-
+  // If already viewed, return early (no duplicate action needed)
   if (existing) {
-    return true; // Already viewed, no need to record again
+    return true;
   }
 
-  // Insert new view record
+  // Insert new view record (only if not already viewed and not own story)
   const { error: viewError } = await supabase
     .from('story_views')
     .insert({
@@ -208,12 +218,17 @@ export const viewStory = async (storyId: string): Promise<boolean> => {
       viewer_id: user.id,
     });
 
+  // Handle duplicate key constraint error gracefully
   if (viewError) {
+    // If it's a duplicate key error, it means someone else just viewed it
+    if (viewError.code === '23505') {
+      return true; // Already viewed by this user, that's fine
+    }
     console.error('Error recording story view:', viewError);
     return false;
   }
 
-  // Update view count (only for new views)
+  // Only increment view count for genuinely new views from other users
   const { error: countError } = await supabase
     .rpc('increment_story_view_count', { story_id: storyId });
 

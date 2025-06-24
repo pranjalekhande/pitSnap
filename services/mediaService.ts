@@ -41,9 +41,6 @@ export const uploadMedia = async (
   mediaType: 'image' | 'video'
 ): Promise<UploadResult> => {
   try {
-    console.log('🔄 Starting media upload to Supabase Storage');
-    console.log('📁 Local URI:', localUri);
-
     // Check if file exists
     const fileInfo = await FileSystem.getInfoAsync(localUri);
     if (!fileInfo.exists) {
@@ -60,8 +57,6 @@ export const uploadMedia = async (
     const timestamp = Date.now();
     const fileExtension = mediaType === 'image' ? 'jpg' : 'mp4';
     const uniqueFileName = `${timestamp}_${fileName}.${fileExtension}`;
-
-    console.log('☁️ Uploading to Supabase Storage:', uniqueFileName);
 
     // Upload to Supabase Storage using base64 decode
     const { data, error } = await supabase.storage
@@ -80,8 +75,6 @@ export const uploadMedia = async (
     const { data: { publicUrl } } = supabase.storage
       .from('pitsnap-media')
       .getPublicUrl(uniqueFileName);
-
-    console.log('✅ Upload successful! Public URL:', publicUrl);
 
     return { 
       success: true, 

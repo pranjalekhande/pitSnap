@@ -36,13 +36,6 @@ export default function StoryViewerScreen() {
   const route = useRoute<StoryViewerRouteProp>();
   const { stories, friendName, initialIndex = 0 } = route.params;
   
-  // Debug logging
-  console.log('🎬 StoryViewer opened');
-  console.log('📋 Stories received:', stories?.length || 0);
-  console.log('👤 Friend name:', friendName);
-  console.log('🎯 Initial index:', initialIndex);
-  console.log('📖 Stories data:', stories);
-  
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [progress, setProgress] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
@@ -52,9 +45,6 @@ export default function StoryViewerScreen() {
   const longPressTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const currentStory = stories[currentIndex];
-  
-  console.log('🎯 Current story index:', currentIndex);
-  console.log('📄 Current story:', currentStory);
 
   const videoPlayer = useVideoPlayer(
     currentStory?.media_type === 'video' ? currentStory.media_url : null,
@@ -143,31 +133,35 @@ export default function StoryViewerScreen() {
     onMoveShouldSetPanResponder: () => false,
     
     onPanResponderGrant: (evt) => {
-      const { locationX } = evt.nativeEvent;
-      const isRightSide = locationX > screenWidth / 2;
-      
-      // Long press to pause
+      // Long press to pause (500ms for comfortable hold)
       longPressTimeoutRef.current = setTimeout(() => {
         setIsPaused(true);
+        // Pause video if it's a video story
         if (currentStory?.media_type === 'video') {
           videoPlayer.pause();
         }
-      }, 200);
+        // Stop the progress animation
+        progressAnim.stopAnimation();
+      }, 500);
     },
     
     onPanResponderRelease: (evt) => {
+      // Clear the long press timeout
       if (longPressTimeoutRef.current) {
         clearTimeout(longPressTimeoutRef.current);
+        longPressTimeoutRef.current = null;
       }
       
+      // If story is paused, resume it
       if (isPaused) {
         setIsPaused(false);
         if (currentStory?.media_type === 'video') {
           videoPlayer.play();
         }
-        return;
+        return; // Don't handle navigation when resuming from pause
       }
       
+      // Handle navigation based on tap location
       const { locationX } = evt.nativeEvent;
       const isRightSide = locationX > screenWidth / 2;
       
@@ -286,18 +280,6 @@ export default function StoryViewerScreen() {
             <Ionicons name="pause" size={40} color="#FFFFFF" />
           </View>
         )}
-        
-        {/* Touch areas for navigation */}
-        <View style={styles.touchAreas}>
-          <TouchableOpacity 
-            style={styles.leftTouchArea}
-            onPress={handlePreviousStory}
-          />
-          <TouchableOpacity 
-            style={styles.rightTouchArea}
-            onPress={handleNextStory}
-          />
-        </View>
       </View>
 
       {/* Story caption */}
@@ -449,5 +431,45 @@ const styles = StyleSheet.create({
     opacity: 0.4,
     textAlign: 'center',
     marginTop: 4,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  errorTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  errorText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    opacity: 0.7,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  errorDebug: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    opacity: 0.5,
+    marginTop: 12,
+    textAlign: 'center',
+    fontFamily: 'monospace',
+  },
+  errorButton: {
+    backgroundColor: '#E10600',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 20,
+  },
+  errorButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 }); 

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -125,23 +125,15 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
   // Handle focus/blur events to manage tab bar visibility AND camera lifecycle
   useFocusEffect(
     React.useCallback(() => {
-      console.log('📱 Camera screen gained focus - activating camera');
-      // When screen gains focus, activate camera and update tab bar
+      // When screen gains focus, activate camera
       setIsCameraActive(true);
       
-      if (setTabBarVisible) {
-        const shouldHideTabBar = capturedMedia !== null || showFriendSelection;
-        setTabBarVisible(!shouldHideTabBar);
-      }
-      
       return () => {
-        console.log('📱 Camera screen lost focus - deactivating camera');
         // When screen loses focus, deactivate camera and show tab bar
         setIsCameraActive(false);
         
         // Stop any ongoing recording when leaving the screen
         if (isRecording) {
-          console.log('🛑 Stopping recording due to screen navigation');
           setIsRecording(false);
           setIsProcessing(false);
         }
@@ -150,8 +142,10 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
           setTabBarVisible(true);
         }
       };
-    }, [capturedMedia, showFriendSelection, setTabBarVisible, isRecording])
+    }, [setTabBarVisible, isRecording])
   );
+
+
 
   const loadFriends = async () => {
     try {
@@ -162,195 +156,145 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
     }
   };
 
-  const takePicture = async () => {
-    if (!cameraRef.current || isRecording || isProcessing) return;
+  const handleFocus = useCallback(() => {
+    setIsCameraActive(true);
+  }, []);
+
+  const handleBlur = useCallback(async () => {
+    setIsCameraActive(false);
+    
+    if (isRecording) {
+      await stopRecording();
+    }
+  }, [isRecording]);
+
+  const takePhoto = async () => {
+    if (!cameraRef.current || !isCameraActive) {
+      return;
+    }
 
     try {
       setIsProcessing(true);
-      console.log('📸 Taking photo...');
       
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.8,
         base64: false,
+        exif: false,
+        skipProcessing: true,
       });
       
-      if (photo) {
-        console.log('✅ Photo taken successfully:', photo.uri);
-        setCapturedMedia({ uri: photo.uri, type: 'photo' });
-        console.log('📱 Should now show photo preview screen');
-      }
+      setCapturedMedia({
+        uri: photo.uri,
+        type: 'photo'
+      });
     } catch (error) {
       console.error('❌ Error taking photo:', error);
-      Alert.alert('Error', 'Failed to take picture');
+      Alert.alert('Error', 'Failed to take photo. Please try again.');
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const stopRecording = () => {
+  const stopRecording = async () => {
     if (!cameraRef.current || !isRecording) {
-      console.log('⚠️ Cannot stop recording: camera not ready or not recording');
       return;
     }
-    
+
     try {
-      console.log('🛑 Stopping video recording...');
-      cameraRef.current.stopRecording();
-      console.log('✅ Stop recording command sent');
+      await cameraRef.current.stopRecording();
     } catch (error) {
       console.error('❌ Error stopping recording:', error);
-      // Reset state on error
-      setIsRecording(false);
-      setIsProcessing(false);
     }
   };
 
   const startRecording = async () => {
-    if (!cameraRef.current || isRecording || isProcessing) {
-      console.log('⚠️ Cannot start recording:', { 
-        hasCamera: !!cameraRef.current, 
-        isRecording, 
-        isProcessing 
-      });
-      return;
-    }
-    
-    // Check media library permission first
-    if (!mediaPermission?.granted) {
-      Alert.alert(
-        'Media Library Access Needed',
-        'PitSnap needs access to save videos for preview.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Grant Access', 
-            onPress: async () => {
-              await requestMediaPermission();
-              if (mediaPermission?.granted) {
-                startRecording();
-              }
-            }
-          }
-        ]
-      );
+    if (!cameraRef.current || !isCameraActive) {
       return;
     }
 
     try {
-      console.log('🔴 Starting video recording...');
       setIsRecording(true);
+      setIsProcessing(true);
       
-      // Simplified approach - just call recordAsync without timeout
-      console.log('📹 Calling recordAsync...');
       const video = await cameraRef.current.recordAsync({
-        maxDuration: 300 // 5 minutes max
+        maxDuration: 30,
       });
       
-      console.log('✅ Video recording completed:', video);
-      
       if (video && video.uri) {
-        console.log('📹 Video file created:', video.uri);
-        await processRecordedVideo(video.uri);
+        await processVideo(video.uri);
       } else {
-        console.log('❌ No video returned from recording');
-        Alert.alert('Error', 'No video was recorded');
+        Alert.alert('Error', 'Video recording failed. Please try again.');
       }
-      
     } catch (error) {
       console.error('❌ Recording error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      Alert.alert('Error', 'Failed to record video: ' + errorMessage);
+      Alert.alert('Error', 'Failed to record video. Please try again.');
     } finally {
       setIsRecording(false);
       setIsProcessing(false);
-      console.log('🎬 Recording process complete');
     }
   };
 
-  // Separate function to process recorded video
-  const processRecordedVideo = async (videoUri: string) => {
+  const processVideo = async (videoUri: string) => {
     try {
-      setIsProcessing(true);
-      console.log('💾 Processing recorded video...');
+      const previewUri = videoUri;
       
-      // TEMPORARY: Try direct URI first for testing
-      console.log('🧪 Testing direct video URI:', videoUri);
-      setCapturedMedia({ uri: videoUri, type: 'video' });
-      console.log('📱 Direct video preview set - check if this works');
+      // Save to gallery
+      try {
+        await MediaLibrary.saveToLibraryAsync(videoUri);
+      } catch (saveError) {
+        console.error('⚠️ Could not save to media library:', saveError);
+        // Continue anyway - preview should still work
+      }
       
-      // Uncomment below for media library processing if direct URI works
-      /*
-      // Save to media library for reliable preview
-      await MediaLibrary.saveToLibraryAsync(videoUri);
-      console.log('✅ Video saved to media library');
-      
-      // Get the most recent video asset (the one we just saved)
-      const recentVideos = await MediaLibrary.getAssetsAsync({
+      // Get the latest video asset to ensure we have the right URI
+      const { assets } = await MediaLibrary.getAssetsAsync({
         mediaType: 'video',
-        sortBy: 'creationTime',
+        sortBy: [[MediaLibrary.SortBy.creationTime, false]], // Latest first
         first: 1,
       });
       
-      if (recentVideos.assets.length > 0) {
-        const latestAsset = recentVideos.assets[0];
-        console.log('📁 Latest video asset found:', latestAsset.id);
+      if (assets.length > 0) {
+        const latestAsset = assets[0];
         
-        // Get the asset info for preview
+        // Get asset info to get the local URI
         const assetInfo = await MediaLibrary.getAssetInfoAsync(latestAsset.id);
-        console.log('📁 Asset info retrieved:', assetInfo.localUri || assetInfo.uri);
         
-        // Store the asset for potential deletion later
-        setCurrentVideoAsset(latestAsset);
+        const galleryUri = assetInfo.localUri || assetInfo.uri;
         
-        // Use the media library URI for preview (more reliable)
-        const previewUri = assetInfo.localUri || assetInfo.uri;
-        console.log('📱 Setting captured media with URI:', previewUri);
-        console.log('📱 URI type:', typeof previewUri);
-        console.log('📱 URI starts with file://', previewUri?.startsWith('file://'));
-        setCapturedMedia({ uri: previewUri, type: 'video' });
-        console.log('📱 Video preview should now appear with URI:', previewUri);
-      } else {
-        throw new Error('Could not find saved video in media library');
+        if (galleryUri) {
+          setCapturedMedia({ uri: previewUri, type: 'video' });
+          return;
+        }
       }
-      */
       
-    } catch (saveError) {
-      console.error('❌ Failed to save to media library:', saveError);
-      // Fallback to direct file URI
-      console.log('📱 Using direct video URI as fallback:', videoUri);
-      setCapturedMedia({ uri: videoUri, type: 'video' });
-    } finally {
-      setIsProcessing(false);
+      // Fallback: use the direct video URI
+      if (videoUri) {
+        setCapturedMedia({ uri: videoUri, type: 'video' });
+      }
+    } catch (error) {
+      console.error('❌ Error processing video:', error);
+      Alert.alert('Error', 'Failed to process video. Please try again.');
     }
   };
 
-  // Emergency reset function (simplified)
-  const resetCameraState = () => {
-    console.log('🚨 Resetting camera state');
+  const resetCamera = () => {
+    setCapturedMedia(null);
     setIsRecording(false);
     setIsProcessing(false);
   };
 
-  // Simplified capture button handler - mode-based
-  const handleCapture = () => {
-    // Prevent interaction during processing
+  const handleCapturePress = async () => {
     if (isProcessing) {
-      console.log('⚠️ Capture ignored - processing in progress');
       return;
     }
-    
-    console.log(`🎯 Capture button pressed - Mode: ${cameraMode}, Recording: ${isRecording}`);
-    
+
     if (cameraMode === 'photo') {
-      takePicture();
+      await takePhoto();
     } else {
-      // Video mode: toggle start/stop
       if (isRecording) {
-        console.log('🛑 User wants to STOP recording');
-        stopRecording();
+        await stopRecording();
       } else {
-        console.log('▶️ User wants to START recording');
-        startRecording();
+        await startRecording();
       }
     }
   };
@@ -367,29 +311,33 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
     setMuted(current => !current);
   };
 
-  const handleDiscardMedia = async () => {
-    console.log('🗑️ Discarding media');
-    
-    // Optionally delete video from media library
-    if (currentVideoAsset && capturedMedia?.type === 'video') {
+  const discardMedia = async () => {
+    if (capturedMedia?.type === 'video' && capturedMedia.uri) {
       try {
-        console.log('🗑️ Deleting video from media library...');
-        const canDelete = await MediaLibrary.requestPermissionsAsync();
-        if (canDelete.granted) {
-          await MediaLibrary.deleteAssetsAsync([currentVideoAsset.id]);
-          console.log('✅ Video deleted from media library');
+        const { assets } = await MediaLibrary.getAssetsAsync({
+          mediaType: 'video',
+          sortBy: [[MediaLibrary.SortBy.creationTime, false]],
+          first: 5,
+        });
+        
+        for (const asset of assets) {
+          const assetInfo = await MediaLibrary.getAssetInfoAsync(asset.id);
+          if (assetInfo.localUri === capturedMedia.uri || assetInfo.uri === capturedMedia.uri) {
+            await MediaLibrary.deleteAssetsAsync([asset.id]);
+            break;
+          }
         }
       } catch (error) {
-        console.log('⚠️ Could not delete video from media library:', error);
-        // Not a critical error, continue with discard
+        console.error('⚠️ Could not delete video from media library:', error);
       }
     }
     
-    // Simple state update - let the declarative system handle video player cleanup
+    // Reset all states to ensure clean state
     setCapturedMedia(null);
-    setCurrentVideoAsset(null);
     setShowFriendSelection(false);
     setSelectedFriends(new Set());
+    setIsRecording(false);
+    setIsProcessing(false);
   };
 
   const handleSendToFriends = () => {
@@ -445,16 +393,16 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
           { 
             text: 'Keep in Gallery', 
             onPress: () => {
-              // Simple state update - let the declarative system handle cleanup
               setCapturedMedia(null);
-              setCurrentVideoAsset(null);
               setShowFriendSelection(false);
               setSelectedFriends(new Set());
             }
           },
           { 
             text: 'Delete from Gallery', 
-            onPress: handleDiscardMedia,
+            onPress: () => {
+              discardMedia();
+            },
             style: 'destructive'
           }
         ]
@@ -542,7 +490,13 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
         
         {/* Header */}
         <View style={styles.friendSelectionHeader}>
-          <TouchableOpacity onPress={() => setShowFriendSelection(false)}>
+          <TouchableOpacity onPress={() => {
+            setShowFriendSelection(false);
+            // Explicitly show tab bar when going back from friend selection
+            if (setTabBarVisible) {
+              setTabBarVisible(true);
+            }
+          }}>
             <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
           </TouchableOpacity>
           <Text style={styles.friendSelectionTitle}>Send To</Text>
@@ -610,10 +564,6 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
 
   // Show media preview screen
   if (capturedMedia) {
-    console.log('🎨 Rendering preview screen for:', capturedMedia.type);
-    console.log('🎨 Preview URI:', capturedMedia.uri);
-    console.log('🎨 URI exists:', !!capturedMedia.uri);
-    console.log('🎨 File exists check:', capturedMedia.uri ? 'URI provided' : 'No URI');
     return (
       <View style={styles.previewContainer}>
         <StatusBar style="light" />
@@ -627,9 +577,6 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
             allowsPictureInPicture={false}
             nativeControls={false}
             contentFit="contain"
-            onFirstFrameRender={() => {
-              console.log('🎬 Video first frame rendered');
-            }}
           />
         ) : (
           <Image source={{ uri: capturedMedia.uri }} style={styles.fullPreview} />
@@ -642,10 +589,11 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
             <TouchableOpacity 
               style={styles.previewBackButton} 
               onPress={() => {
-                console.log('🔙 Back button pressed - clearing media');
-                // Simple state update - let the declarative video player management handle cleanup
                 setCapturedMedia(null);
-                setCurrentVideoAsset(null);
+                // Explicitly show tab bar when going back
+                if (setTabBarVisible) {
+                  setTabBarVisible(true);
+                }
               }}
               activeOpacity={0.7}
             >
@@ -673,16 +621,18 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
           {/* Snapchat-style Bottom Actions */}
           <View style={styles.snapchatBottomActions}>
             {/* Download Button */}
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.saveButton} 
               onPress={() => {
                 Alert.alert('Saved!', 'Media saved to your camera roll', [
                   { 
                     text: 'OK', 
                     onPress: () => {
-                      // Simple state update - let the declarative system handle cleanup
                       setCapturedMedia(null);
-                      setCurrentVideoAsset(null);
+                      // Explicitly show tab bar after saving
+                      if (setTabBarVisible) {
+                        setTabBarVisible(true);
+                      }
                     }
                   }
                 ]);
@@ -693,7 +643,7 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
             </TouchableOpacity>
 
             {/* Stories Button */}
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.snapchatStoriesButton} 
               onPress={() => {
                 // Navigate to StoryComposer with the captured media
@@ -704,6 +654,11 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
                     mediaType: capturedMedia.type,
                   }
                 });
+                // Clear captured media and show tab bar when navigating to stories
+                setCapturedMedia(null);
+                if (setTabBarVisible) {
+                  setTabBarVisible(true);
+                }
               }}
               activeOpacity={0.8}
             >
@@ -810,7 +765,7 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
                 isProcessing && styles.captureButtonProcessing,
                 cameraMode === 'video' && styles.captureButtonVideo
               ]}
-              onPress={handleCapture}
+              onPress={handleCapturePress}
               activeOpacity={0.8}
               disabled={isProcessing}
             >
@@ -1426,4 +1381,5 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     opacity: 0.8,
   },
+
 }); 

@@ -63,7 +63,6 @@ export const sendFriendRequest = async (friendId: string): Promise<boolean> => {
     .single();
 
   if (existing) {
-    console.log('Friend request already exists');
     return false;
   }
 
