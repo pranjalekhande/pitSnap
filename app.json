@@ -13,17 +13,38 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "PitSnap needs camera access to capture photos and videos",
+        "NSMicrophoneUsageDescription": "PitSnap needs microphone access to record videos with audio",
+        "NSPhotoLibraryUsageDescription": "PitSnap needs photo library access to save and preview videos"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow PitSnap to access your camera to capture photos and videos",
+          "microphonePermission": "Allow PitSnap to access your microphone to record videos with audio"
+        }
+      ],
+      "expo-video"
+    ]
   }
 }

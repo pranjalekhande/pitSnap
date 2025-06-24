@@ -9,8 +9,11 @@ import {
   Image,
   FlatList,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
+import { VideoView, useVideoPlayer } from 'expo-video';
+import * as MediaLibrary from 'expo-media-library';
 import { Ionicons } from '@expo/vector-icons';
 import { getFriends, type User } from '../../services/friendsService';
 import { sendMessage as sendMessageService } from '../../services/messagesService';
@@ -23,24 +26,67 @@ interface CapturedMedia {
   type: 'photo' | 'video';
 }
 
-export default function CameraScreen() {
+interface CameraScreenProps {
+  setTabBarVisible?: (visible: boolean) => void;
+}
+
+export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
   const [permission, requestPermission] = useCameraPermissions();
+  const [mediaPermission, requestMediaPermission] = MediaLibrary.usePermissions();
   const [facing, setFacing] = useState<CameraType>('back');
   const [isRecording, setIsRecording] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [flash, setFlash] = useState<'off' | 'on'>('off');
   const [capturedMedia, setCapturedMedia] = useState<CapturedMedia | null>(null);
   const [showFriendSelection, setShowFriendSelection] = useState(false);
   const [friends, setFriends] = useState<User[]>([]);
   const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
+  const [cameraMode, setCameraMode] = useState<'photo' | 'video'>('photo');
+  const [currentVideoAsset, setCurrentVideoAsset] = useState<MediaLibrary.Asset | null>(null);
+  const [muted, setMuted] = useState(false);
   const cameraRef = useRef<CameraView>(null);
+
+  // Create video players with proper declarative approach
+  const smallVideoPlayer = useVideoPlayer(
+    capturedMedia?.type === 'video' ? capturedMedia.uri : null,
+    player => {
+      if (capturedMedia?.type === 'video') {
+        player.loop = false;
+        player.muted = true; // Small preview is always muted
+      }
+    }
+  );
+
+  const fullVideoPlayer = useVideoPlayer(
+    capturedMedia?.type === 'video' ? capturedMedia.uri : null,
+    player => {
+      if (capturedMedia?.type === 'video') {
+        player.loop = true;
+        player.muted = muted; // Use the muted state
+        // Auto-play after a brief moment for smoother UX
+        setTimeout(() => {
+          try {
+            player.play();
+          } catch (err) {
+            console.error('❌ Failed to start video playback:', err);
+          }
+        }, 100);
+      }
+    }
+  );
 
   // Check permissions on component mount
   useEffect(() => {
-    if (!permission?.granted && permission?.canAskAgain) {
-      requestPermission();
-    }
-  }, [permission]);
+    (async () => {
+      if (!permission?.granted && permission?.canAskAgain) {
+        await requestPermission();
+      }
+      if (!mediaPermission?.granted && mediaPermission?.canAskAgain) {
+        await requestMediaPermission();
+      }
+    })();
+  }, [permission, mediaPermission]);
 
   // Load friends when friend selection is shown
   useEffect(() => {
@@ -48,6 +94,49 @@ export default function CameraScreen() {
       loadFriends();
     }
   }, [showFriendSelection]);
+
+  // Control tab bar visibility based on preview/friend selection state
+  useEffect(() => {
+    if (setTabBarVisible) {
+      // Hide tab bar when in preview mode or friend selection
+      const shouldHideTabBar = capturedMedia !== null || showFriendSelection;
+      setTabBarVisible(!shouldHideTabBar);
+    }
+  }, [capturedMedia, showFriendSelection, setTabBarVisible]);
+
+  // Update video player mute state when muted state changes
+  useEffect(() => {
+    if (fullVideoPlayer && capturedMedia?.type === 'video') {
+      fullVideoPlayer.muted = muted;
+    }
+  }, [muted, fullVideoPlayer, capturedMedia]);
+
+  // Cleanup: Show tab bar when component unmounts
+  useEffect(() => {
+    return () => {
+      if (setTabBarVisible) {
+        setTabBarVisible(true);
+      }
+    };
+  }, [setTabBarVisible]);
+
+  // Handle focus/blur events to manage tab bar visibility
+  useFocusEffect(
+    React.useCallback(() => {
+      // When screen gains focus, update tab bar based on current state
+      if (setTabBarVisible) {
+        const shouldHideTabBar = capturedMedia !== null || showFriendSelection;
+        setTabBarVisible(!shouldHideTabBar);
+      }
+      
+      return () => {
+        // When screen loses focus, show tab bar for other screens
+        if (setTabBarVisible) {
+          setTabBarVisible(true);
+        }
+      };
+    }, [capturedMedia, showFriendSelection, setTabBarVisible])
+  );
 
   const loadFriends = async () => {
     try {
@@ -59,48 +148,195 @@ export default function CameraScreen() {
   };
 
   const takePicture = async () => {
-    if (!cameraRef.current) return;
+    if (!cameraRef.current || isRecording || isProcessing) return;
 
     try {
+      setIsProcessing(true);
+      console.log('📸 Taking photo...');
+      
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.8,
         base64: false,
       });
       
       if (photo) {
+        console.log('✅ Photo taken successfully:', photo.uri);
         setCapturedMedia({ uri: photo.uri, type: 'photo' });
+        console.log('📱 Should now show photo preview screen');
       }
     } catch (error) {
+      console.error('❌ Error taking photo:', error);
       Alert.alert('Error', 'Failed to take picture');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const stopRecording = () => {
+    if (!cameraRef.current || !isRecording) {
+      console.log('⚠️ Cannot stop recording: camera not ready or not recording');
+      return;
+    }
+    
+    try {
+      console.log('🛑 Stopping video recording...');
+      cameraRef.current.stopRecording();
+      console.log('✅ Stop recording command sent');
+    } catch (error) {
+      console.error('❌ Error stopping recording:', error);
+      // Reset state on error
+      setIsRecording(false);
+      setIsProcessing(false);
     }
   };
 
   const startRecording = async () => {
-    if (!cameraRef.current || isRecording) return;
+    if (!cameraRef.current || isRecording || isProcessing) {
+      console.log('⚠️ Cannot start recording:', { 
+        hasCamera: !!cameraRef.current, 
+        isRecording, 
+        isProcessing 
+      });
+      return;
+    }
+    
+    // Check media library permission first
+    if (!mediaPermission?.granted) {
+      Alert.alert(
+        'Media Library Access Needed',
+        'PitSnap needs access to save videos for preview.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Grant Access', 
+            onPress: async () => {
+              await requestMediaPermission();
+              if (mediaPermission?.granted) {
+                startRecording();
+              }
+            }
+          }
+        ]
+      );
+      return;
+    }
 
     try {
+      console.log('🔴 Starting video recording...');
       setIsRecording(true);
+      
+      // Simplified approach - just call recordAsync without timeout
+      console.log('📹 Calling recordAsync...');
       const video = await cameraRef.current.recordAsync({
-        maxDuration: 10, // 10 seconds max like Snapchat
+        maxDuration: 300 // 5 minutes max
       });
       
-      if (video) {
-        setCapturedMedia({ uri: video.uri, type: 'video' });
+      console.log('✅ Video recording completed:', video);
+      
+      if (video && video.uri) {
+        console.log('📹 Video file created:', video.uri);
+        await processRecordedVideo(video.uri);
+      } else {
+        console.log('❌ No video returned from recording');
+        Alert.alert('Error', 'No video was recorded');
       }
+      
     } catch (error) {
-      Alert.alert('Error', 'Failed to record video');
+      console.error('❌ Recording error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      Alert.alert('Error', 'Failed to record video: ' + errorMessage);
     } finally {
       setIsRecording(false);
+      setIsProcessing(false);
+      console.log('🎬 Recording process complete');
     }
   };
 
-  const stopRecording = async () => {
-    if (!cameraRef.current || !isRecording) return;
-    
+  // Separate function to process recorded video
+  const processRecordedVideo = async (videoUri: string) => {
     try {
-      await cameraRef.current.stopRecording();
-    } catch (error) {
-      console.log('Error stopping recording:', error);
+      setIsProcessing(true);
+      console.log('💾 Processing recorded video...');
+      
+      // TEMPORARY: Try direct URI first for testing
+      console.log('🧪 Testing direct video URI:', videoUri);
+      setCapturedMedia({ uri: videoUri, type: 'video' });
+      console.log('📱 Direct video preview set - check if this works');
+      
+      // Uncomment below for media library processing if direct URI works
+      /*
+      // Save to media library for reliable preview
+      await MediaLibrary.saveToLibraryAsync(videoUri);
+      console.log('✅ Video saved to media library');
+      
+      // Get the most recent video asset (the one we just saved)
+      const recentVideos = await MediaLibrary.getAssetsAsync({
+        mediaType: 'video',
+        sortBy: 'creationTime',
+        first: 1,
+      });
+      
+      if (recentVideos.assets.length > 0) {
+        const latestAsset = recentVideos.assets[0];
+        console.log('📁 Latest video asset found:', latestAsset.id);
+        
+        // Get the asset info for preview
+        const assetInfo = await MediaLibrary.getAssetInfoAsync(latestAsset.id);
+        console.log('📁 Asset info retrieved:', assetInfo.localUri || assetInfo.uri);
+        
+        // Store the asset for potential deletion later
+        setCurrentVideoAsset(latestAsset);
+        
+        // Use the media library URI for preview (more reliable)
+        const previewUri = assetInfo.localUri || assetInfo.uri;
+        console.log('📱 Setting captured media with URI:', previewUri);
+        console.log('📱 URI type:', typeof previewUri);
+        console.log('📱 URI starts with file://', previewUri?.startsWith('file://'));
+        setCapturedMedia({ uri: previewUri, type: 'video' });
+        console.log('📱 Video preview should now appear with URI:', previewUri);
+      } else {
+        throw new Error('Could not find saved video in media library');
+      }
+      */
+      
+    } catch (saveError) {
+      console.error('❌ Failed to save to media library:', saveError);
+      // Fallback to direct file URI
+      console.log('📱 Using direct video URI as fallback:', videoUri);
+      setCapturedMedia({ uri: videoUri, type: 'video' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Emergency reset function (simplified)
+  const resetCameraState = () => {
+    console.log('🚨 Resetting camera state');
+    setIsRecording(false);
+    setIsProcessing(false);
+  };
+
+  // Simplified capture button handler - mode-based
+  const handleCapture = () => {
+    // Prevent interaction during processing
+    if (isProcessing) {
+      console.log('⚠️ Capture ignored - processing in progress');
+      return;
+    }
+    
+    console.log(`🎯 Capture button pressed - Mode: ${cameraMode}, Recording: ${isRecording}`);
+    
+    if (cameraMode === 'photo') {
+      takePicture();
+    } else {
+      // Video mode: toggle start/stop
+      if (isRecording) {
+        console.log('🛑 User wants to STOP recording');
+        stopRecording();
+      } else {
+        console.log('▶️ User wants to START recording');
+        startRecording();
+      }
     }
   };
 
@@ -112,8 +348,31 @@ export default function CameraScreen() {
     setFlash(current => (current === 'off' ? 'on' : 'off'));
   };
 
-  const handleDiscardMedia = () => {
+  const toggleMute = () => {
+    setMuted(current => !current);
+  };
+
+  const handleDiscardMedia = async () => {
+    console.log('🗑️ Discarding media');
+    
+    // Optionally delete video from media library
+    if (currentVideoAsset && capturedMedia?.type === 'video') {
+      try {
+        console.log('🗑️ Deleting video from media library...');
+        const canDelete = await MediaLibrary.requestPermissionsAsync();
+        if (canDelete.granted) {
+          await MediaLibrary.deleteAssetsAsync([currentVideoAsset.id]);
+          console.log('✅ Video deleted from media library');
+        }
+      } catch (error) {
+        console.log('⚠️ Could not delete video from media library:', error);
+        // Not a critical error, continue with discard
+      }
+    }
+    
+    // Simple state update - let the declarative system handle video player cleanup
     setCapturedMedia(null);
+    setCurrentVideoAsset(null);
     setShowFriendSelection(false);
     setSelectedFriends(new Set());
   };
@@ -167,7 +426,23 @@ export default function CameraScreen() {
       Alert.alert(
         'Sent!', 
         `${capturedMedia.type === 'photo' ? 'Photo' : 'Video'} sent to ${selectedFriends.size} friend${selectedFriends.size > 1 ? 's' : ''}!`,
-        [{ text: 'OK', onPress: handleDiscardMedia }]
+        [
+          { 
+            text: 'Keep in Gallery', 
+            onPress: () => {
+              // Simple state update - let the declarative system handle cleanup
+              setCapturedMedia(null);
+              setCurrentVideoAsset(null);
+              setShowFriendSelection(false);
+              setSelectedFriends(new Set());
+            }
+          },
+          { 
+            text: 'Delete from Gallery', 
+            onPress: handleDiscardMedia,
+            style: 'destructive'
+          }
+        ]
       );
     } catch (error) {
       console.error('Error sending messages:', error);
@@ -211,21 +486,40 @@ export default function CameraScreen() {
     );
   }
 
-  if (!permission.granted) {
+  if (!permission.granted || !mediaPermission?.granted) {
+    const needsCamera = !permission.granted;
+    const needsMedia = !mediaPermission?.granted;
+    
     return (
       <View style={styles.permissionContainer}>
-        <Text style={styles.permissionText}>📸 Camera Access Needed</Text>
-        <Text style={styles.permissionSubtext}>
-          PitSnap needs camera access to capture photos and videos
+        <Text style={styles.permissionText}>
+          {needsCamera && needsMedia ? '📸📁 Permissions Needed' : 
+           needsCamera ? '📸 Camera Access Needed' : 
+           '📁 Media Library Access Needed'}
         </Text>
-        <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
-          <Text style={styles.permissionButtonText}>Enable Camera</Text>
-        </TouchableOpacity>
+        <Text style={styles.permissionSubtext}>
+          {needsCamera && needsMedia ? 
+            'PitSnap needs camera and media library access to capture and save videos for preview' :
+            needsCamera ? 
+              'PitSnap needs camera access to capture photos and videos' :
+              'PitSnap needs media library access to save videos for preview'
+          }
+        </Text>
+        {needsCamera && (
+          <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
+            <Text style={styles.permissionButtonText}>Enable Camera</Text>
+          </TouchableOpacity>
+        )}
+        {needsMedia && (
+          <TouchableOpacity style={[styles.permissionButton, {marginTop: 10}]} onPress={requestMediaPermission}>
+            <Text style={styles.permissionButtonText}>Enable Media Library</Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
   }
 
-  // Show friend selection screen (NEW DESIGN)
+  // Show friend selection screen
   if (showFriendSelection && capturedMedia) {
     return (
       <View style={styles.friendSelectionContainer}>
@@ -242,7 +536,18 @@ export default function CameraScreen() {
 
         {/* Small Media Preview */}
         <View style={styles.smallMediaPreview}>
-          <Image source={{ uri: capturedMedia.uri }} style={styles.smallMediaImage} />
+          {capturedMedia.type === 'video' && capturedMedia.uri ? (
+            <VideoView
+              style={styles.smallMediaImage}
+              player={smallVideoPlayer}
+              allowsFullscreen={false}
+              allowsPictureInPicture={false}
+              nativeControls={false}
+              contentFit="cover"
+            />
+          ) : (
+            <Image source={{ uri: capturedMedia.uri }} style={styles.smallMediaImage} />
+          )}
           {capturedMedia.type === 'video' && (
             <View style={styles.smallVideoIndicator}>
               <Ionicons name="videocam" size={16} color="#FFFFFF" />
@@ -266,7 +571,7 @@ export default function CameraScreen() {
           ) : (
             <View style={styles.noFriendsContainer}>
               <Text style={styles.noFriendsText}>No friends yet</Text>
-              <Text style={styles.noFriendsSubtext}>Add friends to send photos!</Text>
+              <Text style={styles.noFriendsSubtext}>Add friends to send videos!</Text>
             </View>
           )}
         </View>
@@ -274,7 +579,7 @@ export default function CameraScreen() {
         {/* Send Button - Bottom Right (Snapchat Style) */}
         {selectedFriends.size > 0 && (
           <TouchableOpacity
-            style={styles.snapchatSendButton}
+            style={styles.snapchatFloatingSendButton}
             onPress={handleSendMessages}
             disabled={sending}
           >
@@ -290,32 +595,111 @@ export default function CameraScreen() {
 
   // Show media preview screen
   if (capturedMedia) {
+    console.log('🎨 Rendering preview screen for:', capturedMedia.type);
+    console.log('🎨 Preview URI:', capturedMedia.uri);
+    console.log('🎨 URI exists:', !!capturedMedia.uri);
+    console.log('🎨 File exists check:', capturedMedia.uri ? 'URI provided' : 'No URI');
     return (
       <View style={styles.previewContainer}>
         <StatusBar style="light" />
         
         {/* Media Preview */}
-        <Image source={{ uri: capturedMedia.uri }} style={styles.fullPreview} />
+        {capturedMedia.type === 'video' && capturedMedia.uri ? (
+          <VideoView
+            style={styles.fullPreview}
+            player={fullVideoPlayer}
+            allowsFullscreen={false}
+            allowsPictureInPicture={false}
+            nativeControls={false}
+            contentFit="contain"
+            onFirstFrameRender={() => {
+              console.log('🎬 Video first frame rendered');
+            }}
+          />
+        ) : (
+          <Image source={{ uri: capturedMedia.uri }} style={styles.fullPreview} />
+        )}
         
         {/* Preview Overlay */}
         <View style={styles.previewOverlay}>
           {/* Top Actions */}
           <View style={styles.previewTopActions}>
-            <TouchableOpacity style={styles.previewButton} onPress={handleDiscardMedia}>
-              <Ionicons name="close" size={24} color="#FFFFFF" />
+            <TouchableOpacity 
+              style={styles.previewBackButton} 
+              onPress={() => {
+                console.log('🔙 Back button pressed - clearing media');
+                // Simple state update - let the declarative video player management handle cleanup
+                setCapturedMedia(null);
+                setCurrentVideoAsset(null);
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="chevron-back" size={28} color="#FFFFFF" />
             </TouchableOpacity>
+
+            {/* Mute button for video preview or spacer for photos */}
+            {capturedMedia?.type === 'video' ? (
+              <TouchableOpacity 
+                style={styles.previewMuteButton} 
+                onPress={toggleMute}
+                activeOpacity={0.7}
+              >
+                <Ionicons 
+                  name={muted ? 'volume-off' : 'volume-high'} 
+                  size={24} 
+                  color="#FFFFFF" 
+                />
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.previewSpacer} />
+            )}
           </View>
 
-          {/* Bottom Actions */}
-          <View style={styles.previewBottomActions}>
-            <TouchableOpacity style={styles.previewActionButton} onPress={handleDiscardMedia}>
-              <Ionicons name="trash" size={24} color="#FFFFFF" />
-              <Text style={styles.previewActionText}>Discard</Text>
+          {/* Snapchat-style Bottom Actions */}
+          <View style={styles.snapchatBottomActions}>
+            {/* Download Button */}
+            <TouchableOpacity 
+              style={styles.saveButton} 
+              onPress={() => {
+                Alert.alert('Saved!', 'Media saved to your camera roll', [
+                  { 
+                    text: 'OK', 
+                    onPress: () => {
+                      // Simple state update - let the declarative system handle cleanup
+                      setCapturedMedia(null);
+                      setCurrentVideoAsset(null);
+                    }
+                  }
+                ]);
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="download-outline" size={24} color="#FFFFFF" />
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.sendToFriendsButton} onPress={handleSendToFriends}>
-              <Ionicons name="send" size={24} color="#FFFFFF" />
-              <Text style={styles.sendToFriendsText}>Send to Friends</Text>
+            {/* Stories Button */}
+            <TouchableOpacity 
+              style={styles.snapchatStoriesButton} 
+              onPress={() => {
+                // TODO: Implement Stories functionality
+                Alert.alert('Coming Soon', 'Stories feature will be available soon!');
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={styles.snapchatStoriesAvatar}>
+                <Text style={styles.snapchatStoriesInitial}>P</Text>
+              </View>
+              <Text style={styles.snapchatStoriesText}>Stories</Text>
+            </TouchableOpacity>
+
+            {/* Send To Button */}
+            <TouchableOpacity 
+              style={styles.sendToButton} 
+              onPress={handleSendToFriends}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.sendToButtonText}>Send To</Text>
+              <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
         </View>
@@ -334,15 +718,30 @@ export default function CameraScreen() {
         style={styles.camera}
         facing={facing}
         flash={flash}
+        mode={cameraMode === 'video' ? 'video' : 'picture'}
+        mute={muted}
       />
 
       {/* UI Overlay */}
       <View style={styles.overlay}>
         {/* Top Controls */}
         <View style={styles.topControls}>
+          {/* Camera Flip Button */}
+          <TouchableOpacity style={styles.controlButton} onPress={toggleCameraFacing}>
+            <Ionicons name="camera-reverse" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+          
           <TouchableOpacity style={styles.controlButton} onPress={toggleFlash}>
             <Ionicons 
               name={flash === 'on' ? 'flash' : 'flash-off'} 
+              size={24} 
+              color="#FFFFFF" 
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.controlButton} onPress={toggleMute}>
+            <Ionicons 
+              name={muted ? 'volume-off' : 'volume-high'} 
               size={24} 
               color="#FFFFFF" 
             />
@@ -353,7 +752,13 @@ export default function CameraScreen() {
         {isRecording && (
           <View style={styles.recordingIndicator}>
             <View style={styles.recordingDot} />
-            <Text style={styles.recordingText}>Recording...</Text>
+          </View>
+        )}
+
+        {/* Processing Indicator */}
+        {isProcessing && (
+          <View style={styles.processingIndicator}>
+            <View style={styles.processingDot} />
           </View>
         )}
 
@@ -366,25 +771,49 @@ export default function CameraScreen() {
 
           {/* Capture Button */}
           <TouchableOpacity
-            style={[styles.captureButton, isRecording && styles.captureButtonRecording]}
-            onPressIn={startRecording}
-            onPressOut={stopRecording}
-            onPress={takePicture}
+            style={[
+              styles.captureButton, 
+              isRecording && styles.captureButtonRecording,
+              isProcessing && styles.captureButtonProcessing,
+              cameraMode === 'video' && styles.captureButtonVideo
+            ]}
+            onPress={handleCapture}
+            activeOpacity={0.8}
+            disabled={isProcessing}
           >
-            <View style={[styles.captureButtonInner, isRecording && styles.captureButtonInnerRecording]} />
+            {cameraMode === 'video' ? (
+              // Video mode: START/STOP indicator
+              <View style={styles.videoButtonContainer}>
+                <Ionicons 
+                  name={isRecording ? "stop" : "play"} 
+                  size={24} 
+                  color="#FFFFFF" 
+                />
+              </View>
+            ) : (
+              // Photo mode: simple circle
+              <View style={[
+                styles.captureButtonInner, 
+                isProcessing && styles.captureButtonInnerProcessing
+              ]} />
+            )}
           </TouchableOpacity>
 
-          {/* Camera Flip Button */}
-          <TouchableOpacity style={styles.sideButton} onPress={toggleCameraFacing}>
-            <Ionicons name="camera-reverse" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Instructions */}
-        <View style={styles.instructions}>
-          <Text style={styles.instructionText}>
-            Tap for photo • Hold to record
-          </Text>
+          {/* Mode Switcher */}
+          <View style={styles.modeSwitcher}>
+            <TouchableOpacity
+              style={[styles.modeButton, cameraMode === 'photo' && styles.modeButtonActive]}
+              onPress={() => setCameraMode('photo')}
+            >
+              <Ionicons name="camera" size={20} color={cameraMode === 'photo' ? '#E10600' : '#FFFFFF'} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modeButton, cameraMode === 'video' && styles.modeButtonActive]}
+              onPress={() => setCameraMode('video')}
+            >
+              <Ionicons name="videocam" size={20} color={cameraMode === 'video' ? '#E10600' : '#FFFFFF'} />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </View>
@@ -448,7 +877,7 @@ const styles = StyleSheet.create({
     left: 20,
     right: 20,
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
   },
   controlButton: {
     width: 44,
@@ -457,11 +886,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 12,
   },
+
   bottomControls: {
     position: 'absolute',
-    bottom: 100,
+    bottom: 70,
     left: 0,
     right: 0,
     flexDirection: 'row',
@@ -469,13 +898,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 40,
   },
-  sideButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
+  modeSwitcher: {
+    flexDirection: 'column',
     alignItems: 'center',
+    gap: 8,
+  },
+  modeButton: {
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    minWidth: 60,
+  },
+  modeButtonActive: {
+    backgroundColor: 'rgba(225, 6, 0, 0.2)',
   },
   captureButton: {
     width: 80,
@@ -486,9 +922,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 4,
     borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  captureButtonVideo: {
+    borderColor: '#E10600',
+  },
+  videoButtonContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   captureButtonRecording: {
     borderColor: '#E10600',
+    backgroundColor: 'rgba(225, 6, 0, 0.3)',
+    transform: [{ scale: 1.1 }],
+  },
+  captureButtonProcessing: {
+    borderColor: '#FFA500',
+    backgroundColor: 'rgba(255, 165, 0, 0.3)',
+    opacity: 0.7,
   },
   captureButtonInner: {
     width: 60,
@@ -496,9 +954,18 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     backgroundColor: '#FFFFFF',
   },
+  captureButtonInnerVideo: {
+    backgroundColor: '#E10600',
+  },
   captureButtonInnerRecording: {
     borderRadius: 8,
     backgroundColor: '#E10600',
+    width: 40,
+    height: 40,
+  },
+  captureButtonInnerProcessing: {
+    backgroundColor: '#FFA500',
+    opacity: 0.8,
   },
   recordingIndicator: {
     position: 'absolute',
@@ -516,23 +983,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#E10600',
     marginRight: 8,
   },
-  recordingText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  instructions: {
+  processingIndicator: {
     position: 'absolute',
-    bottom: 40,
+    top: 120,
     left: 0,
     right: 0,
     alignItems: 'center',
   },
-  instructionText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '500',
-    opacity: 0.8,
+  processingDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#FFA500',
+    marginRight: 8,
   },
   friendSelectionContainer: {
     flex: 1,
@@ -673,7 +1136,8 @@ const styles = StyleSheet.create({
   },
   fullPreview: {
     flex: 1,
-    resizeMode: 'contain',
+    width: '100%',
+    height: '100%',
   },
   previewOverlay: {
     position: 'absolute',
@@ -689,55 +1153,121 @@ const styles = StyleSheet.create({
     left: 20,
     right: 20,
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
+    zIndex: 10,
   },
-  previewButton: {
+  previewBackButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+    elevation: 8,
   },
-  previewBottomActions: {
+  previewMuteButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  previewSpacer: {
+    width: 44,
+  },
+  // Bottom actions with bigger buttons fitting screen
+  snapchatBottomActions: {
     position: 'absolute',
-    bottom: 100,
+    bottom: 10,
     left: 0,
     right: 0,
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingHorizontal: 40,
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingBottom: 20,
   },
-  previewActionButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+  // Download button - bigger size
+  saveButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#3A3A3A', // Dark grey background
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 4,
-    borderColor: '#FFFFFF',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 8,
   },
-  previewActionText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+  // Stories button - bigger and wider to fit screen
+  snapchatStoriesButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#4A4A4A', // Consistent grey color
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 30,
+    minWidth: 120,
+    justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 8,
   },
-  sendToFriendsButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+  snapchatStoriesAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#6B6B6B', // Lighter grey for avatar
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 4,
-    borderColor: '#FFFFFF',
+    marginRight: 8,
   },
-  sendToFriendsText: {
+  snapchatStoriesInitial: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  snapchatStoriesText: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  sendToButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E10600',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 30,
+    minWidth: 120,
+    justifyContent: 'center',
+    shadowColor: '#E10600',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  sendToButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    marginRight: 8,
+    letterSpacing: 0.3,
   },
   friendsList: {
     paddingVertical: 16,
@@ -776,8 +1306,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     opacity: 0.8,
   },
-  // Snapchat-style floating send button
-  snapchatSendButton: {
+  // Snapchat-style floating send button for friend selection
+  snapchatFloatingSendButton: {
     position: 'absolute',
     bottom: 40,
     right: 20,
@@ -834,5 +1364,13 @@ const styles = StyleSheet.create({
   },
   snapchatSelectedCheck: {
     marginLeft: 'auto',
+  },
+  sideButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 }); 

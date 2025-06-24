@@ -12,6 +12,7 @@ import {
   Animated,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 import { 
   getMessagesWithFriend, 
@@ -45,6 +46,18 @@ export default function IndividualChatScreen({
 
   // Animation for tap-to-view
   const scaleAnim = useRef(new Animated.Value(0)).current;
+
+  // Video player for full-screen viewing
+  const videoPlayer = useVideoPlayer(
+    viewingMessage?.message_type === 'video' ? viewingMessage.media_url : null, 
+    player => {
+      player.loop = true;
+      player.muted = false;
+      if (viewingMessage?.message_type === 'video') {
+        player.play();
+      }
+    }
+  );
 
   useEffect(() => {
     loadMessages();
@@ -206,21 +219,30 @@ export default function IndividualChatScreen({
           {...panResponder.panHandlers}
         >
           {viewingMessage.media_url ? (
-            <Image 
-              source={{ uri: viewingMessage.media_url }}
-              style={styles.fullScreenImage}
-              resizeMode="contain"
-              onError={() => {
-                console.error('❌ Image failed to load');
-                Alert.alert('Error', 'Failed to load image');
-              }}
-              onLoad={() => {
-                console.log('✅ Image loaded successfully');
-              }}
-            />
+            viewingMessage.message_type === 'video' ? (
+              <VideoView
+                style={styles.fullScreenImage}
+                player={videoPlayer}
+                allowsFullscreen={false}
+                allowsPictureInPicture={false}
+              />
+            ) : (
+              <Image 
+                source={{ uri: viewingMessage.media_url }}
+                style={styles.fullScreenImage}
+                resizeMode="contain"
+                onError={() => {
+                  console.error('❌ Image failed to load');
+                  Alert.alert('Error', 'Failed to load image');
+                }}
+                onLoad={() => {
+                  console.log('✅ Image loaded successfully');
+                }}
+              />
+            )
           ) : (
             <View style={styles.noImageContainer}>
-              <Text style={styles.noImageText}>No image available</Text>
+              <Text style={styles.noImageText}>No media available</Text>
             </View>
           )}
           
