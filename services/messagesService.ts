@@ -3,7 +3,8 @@ import { supabase } from '../lib/supabase';
 export interface Message {
   id: string;
   sender_id: string;
-  recipient_id: string;
+  recipient_id: string | null; // Now nullable for group messages
+  group_id: string | null; // NEW: for group messages
   content: string | null;
   media_url: string | null;
   message_type: 'text' | 'image' | 'video';
@@ -253,6 +254,66 @@ export const getTimeUntilExpiry = (message: Message): string => {
   } else {
     return `${diffMinutes}m`;
   }
+};
+
+// ============================================
+// GROUP MESSAGING FUNCTIONS (NEW - MINIMAL)
+// ============================================
+
+// Send a message to a group (similar to sendMessage)
+export const sendGroupMessage = async (
+  groupId: string,
+  content: string | null,
+  mediaUrl: string | null,
+  messageType: 'text' | 'image' | 'video' = 'text',
+  expiresInHours: number = 24
+): Promise<boolean> => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return false;
+
+  // Calculate expiration time
+  const expiresAt = new Date();
+  expiresAt.setHours(expiresAt.getHours() + expiresInHours);
+
+  const { error } = await supabase
+    .from('messages')
+    .insert({
+      sender_id: user.id,
+      group_id: groupId, // Group message: group_id set, recipient_id null
+      content,
+      media_url: mediaUrl,
+      message_type: messageType,
+      expires_at: expiresAt.toISOString(),
+    });
+
+  if (error) {
+    console.error('Error sending group message:', error);
+    return false;
+  }
+
+  return true;
+};
+
+// Get messages for a specific group (similar to getMessagesWithFriend)
+export const getGroupMessages = async (groupId: string): Promise<Message[]> => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data: messages, error } = await supabase
+    .from('messages')
+    .select(`
+      *,
+      sender:users!messages_sender_id_fkey(id, display_name, avatar_url)
+    `)
+    .eq('group_id', groupId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Error getting group messages:', error);
+    return [];
+  }
+
+  return messages || [];
 };
 
  

@@ -19,6 +19,15 @@ import { getFriends, type User } from '../../services/friendsService';
 import { sendMessage as sendMessageService } from '../../services/messagesService';
 import { uploadMedia } from '../../services/mediaService';
 
+
+// Import filter components (Snapchat system only - others disabled for now)
+import { 
+  SnapchatFilterOverlay, 
+  SnapchatFilterSelector, 
+  SNAPCHAT_FILTERS, 
+  type SnapchatFilter 
+} from '../../components/camera';
+
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 interface CapturedMedia {
@@ -47,7 +56,14 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
   const [currentVideoAsset, setCurrentVideoAsset] = useState<MediaLibrary.Asset | null>(null);
   const [muted, setMuted] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(true);
+  
+  // Snapchat-style filters state (consolidated filter system)
+  const [selectedSnapchatFilter, setSelectedSnapchatFilter] = useState<SnapchatFilter>(SNAPCHAT_FILTERS[0]); // Default to 'No Filter'
+  const [showSnapchatFilters, setShowSnapchatFilters] = useState(false);
+  const [faceDetected, setFaceDetected] = useState(false); // Simple face detection simulation
+  
   const cameraRef = useRef<CameraView>(null);
+  const cameraContainerRef = useRef<View>(null);
 
   // Create video players with proper declarative approach
   const smallVideoPlayer = useVideoPlayer(
@@ -176,8 +192,10 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
     try {
       setIsProcessing(true);
       
+      console.log('📸 Taking photo...');
+      
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.8,
+        quality: 0.9,
         base64: false,
         exif: false,
         skipProcessing: true,
@@ -187,6 +205,7 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
         uri: photo.uri,
         type: 'photo'
       });
+      
     } catch (error) {
       console.error('❌ Error taking photo:', error);
       Alert.alert('Error', 'Failed to take photo. Please try again.');
@@ -310,6 +329,45 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
   const toggleMute = () => {
     setMuted(current => !current);
   };
+
+  // Snapchat filter handlers (consolidated filter system)
+  const handleSnapchatFilterSelect = (filter: SnapchatFilter) => {
+    setSelectedSnapchatFilter(filter);
+    // Enable simple face detection when a filter is selected
+    if (filter.id !== 'none') {
+      setFaceDetected(true);
+    } else {
+      setFaceDetected(false);
+    }
+  };
+
+  const toggleSnapchatFilters = () => {
+    setShowSnapchatFilters(current => !current);
+  };
+
+
+
+  // Effect to simulate face detection for Snapchat filters
+  React.useEffect(() => {
+    let faceDetectionInterval: NodeJS.Timeout;
+    
+    if (isCameraActive && selectedSnapchatFilter.id !== 'none') {
+      // Simulate realistic face detection timing
+      faceDetectionInterval = setInterval(() => {
+        setFaceDetected(true);
+      }, 100); // Check every 100ms like real face detection
+    } else {
+      setFaceDetected(false);
+    }
+
+    return () => {
+      if (faceDetectionInterval) {
+        clearInterval(faceDetectionInterval);
+      }
+    };
+  }, [isCameraActive, selectedSnapchatFilter.id]);
+
+
 
   const discardMedia = async () => {
     if (capturedMedia?.type === 'video' && capturedMedia.uri) {
@@ -690,14 +748,24 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
       
       {/* Camera View - Only render when camera should be active */}
       {isCameraActive ? (
-        <CameraView
-          ref={cameraRef}
-          style={styles.camera}
-          facing={facing}
-          flash={flash}
-          mode={cameraMode === 'video' ? 'video' : 'picture'}
-          mute={muted}
-        />
+        <View style={styles.cameraContainer} ref={cameraContainerRef}>
+          <CameraView
+            ref={cameraRef}
+            style={styles.camera}
+            facing={facing}
+            flash={flash}
+            mode={cameraMode === 'video' ? 'video' : 'picture'}
+            mute={muted}
+          />
+          
+
+          
+          {/* Snapchat-style Filter Overlay */}
+          <SnapchatFilterOverlay
+            filter={selectedSnapchatFilter}
+            faceDetected={faceDetected}
+          />
+        </View>
       ) : (
         // Show a placeholder when camera is inactive
         <View style={[styles.camera, styles.cameraInactive]}>
@@ -734,6 +802,8 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
                 color="#FFFFFF" 
               />
             </TouchableOpacity>
+
+
           </View>
 
           {/* Recording Indicator */}
@@ -750,12 +820,64 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
             </View>
           )}
 
+          {/* Legacy Filter Systems - Disabled for now
+          {showFilters && (
+            <View style={styles.filtersContainer}>
+              <FilterSelector
+                selectedFilter={selectedFilter}
+                onFilterSelect={handleFilterSelect}
+              />
+            </View>
+          )}
+
+          {showHelmets && (
+            <View style={styles.helmetsContainer}>
+              <HelmetSelector
+                selectedHelmet={selectedHelmet}
+                onHelmetSelect={handleHelmetSelect}
+              />
+            </View>
+          )}
+          */}
+
+          {/* Snapchat Filter Selector - Above Bottom Controls */}
+          {showSnapchatFilters && (
+            <View style={styles.snapchatFiltersContainer}>
+              <SnapchatFilterSelector
+                selectedFilter={selectedSnapchatFilter}
+                onFilterSelect={handleSnapchatFilterSelect}
+              />
+            </View>
+          )}
+
           {/* Bottom Controls */}
           <View style={styles.bottomControls}>
-            {/* Gallery Button (placeholder) */}
-            <TouchableOpacity style={styles.sideButton}>
-              <Ionicons name="images" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
+            {/* Left Side Controls */}
+            <View style={styles.leftControls}>
+              {/* Legacy Filter Buttons - Disabled for now
+              <TouchableOpacity 
+                style={[styles.sideButton, showFilters && styles.sideButtonActive]} 
+                onPress={toggleFilters}
+              >
+                <Ionicons name="color-palette" size={24} color={showFilters ? '#E10600' : '#FFFFFF'} />
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.sideButton, showHelmets && styles.sideButtonActive, styles.helmetButton]} 
+                onPress={toggleHelmets}
+              >
+                <Text style={[styles.helmetIcon, showHelmets && styles.helmetIconActive]}>🪖</Text>
+              </TouchableOpacity>
+              */}
+              
+              {/* Snapchat Filters Toggle Button */}
+              <TouchableOpacity 
+                style={[styles.sideButton, showSnapchatFilters && styles.sideButtonActive, styles.snapchatButton]} 
+                onPress={toggleSnapchatFilters}
+              >
+                <Text style={[styles.snapchatIcon, showSnapchatFilters && styles.snapchatIconActive]}>😎</Text>
+              </TouchableOpacity>
+            </View>
 
             {/* Capture Button */}
             <TouchableOpacity
@@ -805,6 +927,20 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
           </View>
         </View>
       )}
+
+      {/* Photo Composer - Disabled for now (legacy filter system)
+      {needsEmojiCompositing && photoForCompositing && (
+        <View style={styles.hiddenPhotoComposer}>
+          <PhotoComposer
+            ref={photoComposerRef}
+            imageUri={photoForCompositing}
+            helmet={selectedHelmet}
+            imageWidth={screenWidth * 2}
+            imageHeight={screenHeight * 2}
+          />
+        </View>
+      )}
+      */}
     </View>
   );
 }
@@ -847,6 +983,10 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
   },
+  cameraContainer: {
+    flex: 1,
+    position: 'relative',
+  },
   camera: {
     flex: 1,
     width: screenWidth,
@@ -877,6 +1017,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
+  filtersContainer: {
+    position: 'absolute',
+    bottom: 170,
+    left: 0,
+    right: 0,
+    zIndex: 2,
+  },
+  helmetsContainer: {
+    position: 'absolute',
+    bottom: 170,
+    left: 0,
+    right: 0,
+    zIndex: 2,
+  },
+  snapchatFiltersContainer: {
+    position: 'absolute',
+    bottom: 170,
+    left: 0,
+    right: 0,
+    zIndex: 2,
+  },
   bottomControls: {
     position: 'absolute',
     bottom: 70,
@@ -886,6 +1047,36 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     alignItems: 'center',
     paddingHorizontal: 40,
+  },
+  sideButtonActive: {
+    backgroundColor: 'rgba(225, 6, 0, 0.3)',
+    borderWidth: 2,
+    borderColor: '#E10600',
+  },
+  leftControls: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 8,
+  },
+  helmetButton: {
+    marginTop: 8,
+  },
+  helmetIcon: {
+    fontSize: 20,
+    color: '#FFFFFF',
+  },
+  helmetIconActive: {
+    color: '#E10600',
+  },
+  snapchatButton: {
+    marginTop: 8,
+  },
+  snapchatIcon: {
+    fontSize: 20,
+    color: '#FFFFFF',
+  },
+  snapchatIconActive: {
+    color: '#E10600',
   },
   modeSwitcher: {
     flexDirection: 'column',
@@ -1380,6 +1571,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#FFFFFF',
     opacity: 0.8,
+  },
+  hiddenPhotoComposer: {
+    position: 'absolute',
+    top: -99999, // Hide far off-screen
+    left: -99999,
+    width: 1, // Use minimal size when hidden
+    height: 1,
+    opacity: 0,
+    pointerEvents: 'none', // Prevent any touch interference
   },
 
 }); 

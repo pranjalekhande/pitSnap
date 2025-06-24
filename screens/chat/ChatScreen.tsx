@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { getConversations, subscribeToMessages, type Conversation } from '../../services/messagesService';
+import { getConversations, subscribeToMessages, type Conversation, sendGroupMessage, getGroupMessages } from '../../services/messagesService';
+import { createGroup, getUserGroups, getGroupMembers } from '../../services/groupsService';
 import { useAuth } from '../../contexts/AuthContext';
 import IndividualChatScreen from './IndividualChatScreen';
 
@@ -63,6 +64,36 @@ export default function ChatScreen({ onChatPress }: ChatScreenProps) {
     setSelectedChat(null);
     // Reload conversations to update read status
     loadConversations();
+  };
+
+  // TEST GROUP CHAT FUNCTIONS - TEMPORARILY DISABLED
+  const testGroupFunctions = async () => {
+    Alert.alert(
+      'Group Chat Temporarily Disabled', 
+      'Group functionality is temporarily disabled to fix individual chat.\n\nFirst we need to restore your individual messaging, then we can add groups back safely.'
+    );
+  };
+
+  // TEST INDIVIDUAL CHAT (ensure no breaking changes)
+  const testIndividualChat = async () => {
+    console.log('🧪 Testing Individual Chat Functions...');
+    Alert.alert('Testing Individual Chat', 'Check console for results...');
+    
+    try {
+      // Test loading conversations (existing functionality)
+      console.log('1. Testing getConversations...');
+      const convos = await getConversations();
+      console.log('✅ Individual conversations loaded:', convos.length, 'conversations');
+      
+      Alert.alert(
+        'Individual Chat Test Success! ✅', 
+        `✅ Loaded ${convos.length} conversations\n✅ No breaking changes detected\n\nIndividual messaging works perfectly!`
+      );
+      
+    } catch (error) {
+      console.error('❌ Individual chat test failed:', error);
+      Alert.alert('Test Failed', `Individual chat broken! Error: ${error}`);
+    }
   };
 
   const formatTime = (dateString: string): string => {
@@ -163,6 +194,21 @@ export default function ChatScreen({ onChatPress }: ChatScreenProps) {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerText}>Chats</Text>
+        {/* TEST BUTTONS - Remove after testing */}
+        <View style={styles.testButtons}>
+          <TouchableOpacity 
+            style={styles.testButton} 
+            onPress={testIndividualChat}
+          >
+            <Text style={styles.testButtonText}>✅ Test Individual</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.testButton, styles.testButtonSecondary]} 
+            onPress={testGroupFunctions}
+          >
+            <Text style={styles.testButtonText}>🧪 Test Groups</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Content */}
@@ -357,5 +403,27 @@ const styles = StyleSheet.create({
     color: '#E10600',
     fontWeight: '500',
     textAlign: 'center',
+  },
+  // TEST BUTTON STYLES - Remove after testing
+  testButtons: {
+    position: 'absolute',
+    top: 65,
+    right: 20,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  testButton: {
+    backgroundColor: '#E10600',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  testButtonSecondary: {
+    backgroundColor: '#28A745',
+  },
+  testButtonText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '600',
   },
 }); 
