@@ -9,6 +9,7 @@ export interface Message {
   message_type: 'text' | 'image' | 'video';
   expires_at: string | null;
   read_at: string | null;
+  first_viewed_at: string | null;
   created_at: string;
   // Joined data
   sender?: {
@@ -161,6 +162,21 @@ export const markMessageAsRead = async (messageId: string): Promise<boolean> => 
   return true;
 };
 
+// Mark a message as first viewed (for replay functionality)
+export const markMessageAsFirstViewed = async (messageId: string): Promise<boolean> => {
+  const { error } = await supabase
+    .from('messages')
+    .update({ first_viewed_at: new Date().toISOString() })
+    .eq('id', messageId);
+
+  if (error) {
+    console.error('Error marking message as first viewed:', error);
+    return false;
+  }
+
+  return true;
+};
+
 // Delete a message (for expiration or user deletion)
 export const deleteMessage = async (messageId: string): Promise<boolean> => {
   const { error } = await supabase
@@ -237,4 +253,6 @@ export const getTimeUntilExpiry = (message: Message): string => {
   } else {
     return `${diffMinutes}m`;
   }
-}; 
+};
+
+ 

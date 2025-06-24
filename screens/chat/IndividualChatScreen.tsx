@@ -23,13 +23,13 @@ import {
   deleteMessage,
   isMessageExpired,
   sendMessage,
+  markMessageAsFirstViewed,
   type Message 
 } from '../../services/messagesService';
 import { useAuth } from '../../contexts/AuthContext';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-// Helper function to get time since message was sent
 const getTimeSinceSent = (createdAt: string): string => {
   const now = new Date();
   const sentTime = new Date(createdAt);
@@ -65,16 +65,13 @@ export default function IndividualChatScreen({
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewingMessage, setViewingMessage] = useState<Message | null>(null);
-  const [viewStartTime, setViewStartTime] = useState<number>(0);
   const viewTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const [messageText, setMessageText] = useState('');
   const [sendingText, setSendingText] = useState(false);
 
-  // Animation for tap-to-view
   const scaleAnim = useRef(new Animated.Value(0)).current;
 
-  // Video player for full-screen viewing
   const videoPlayer = useVideoPlayer(
     viewingMessage?.message_type === 'video' ? viewingMessage.media_url : null, 
     player => {
@@ -90,21 +87,17 @@ export default function IndividualChatScreen({
     loadMessages();
   }, [friendId]);
 
-  // Auto-scroll when new messages arrive
   useEffect(() => {
     if (messages.length > 0 && !loading) {
       setTimeout(() => {
         if (flatListRef.current) {
-          flatListRef.current.scrollToEnd({
-            animated: true,
-          });
+          flatListRef.current.scrollToEnd({ animated: true });
         }
       }, 100);
     }
   }, [messages.length, loading]);
 
   useEffect(() => {
-    // Cleanup timeout on unmount
     return () => {
       if (viewTimeoutRef.current) {
         clearTimeout(viewTimeoutRef.current);
@@ -116,26 +109,22 @@ export default function IndividualChatScreen({
     try {
       const messagesList = await getMessagesWithFriend(friendId);
       
-      // Filter out expired messages and sort by creation time (oldest first, no inversion needed)
       const validMessages = messagesList
         .filter(msg => !isMessageExpired(msg))
         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
       
-      // Mark unread text messages as read (since they don't need "tap to view")
       const unreadTextMessages = validMessages.filter(msg => 
         msg.recipient_id === user?.id && 
         !msg.read_at && 
         msg.message_type === 'text'
       );
       
-      // Mark all unread text messages as read
       await Promise.all(
         unreadTextMessages.map(msg => markMessageAsRead(msg.id))
       );
       
       setMessages(validMessages);
       
-      // Auto-scroll to bottom (latest messages) after messages load
       setTimeout(() => {
         if (flatListRef.current && validMessages.length > 0) {
           flatListRef.current.scrollToEnd({ animated: false });
@@ -156,15 +145,21 @@ export default function IndividualChatScreen({
       return;
     }
 
-    // Mark as read if it's received message
+    // Check if message has already been viewed
+    if (message.first_viewed_at) {
+      Alert.alert('Opened', 'This message has already been viewed');
+      return;
+    }
+
+    // Mark as viewed on first view
+    await markMessageAsFirstViewed(message.id);
+
     if (message.recipient_id === user?.id && !message.read_at) {
       await markMessageAsRead(message.id);
     }
 
     setViewingMessage(message);
-    setViewStartTime(Date.now());
 
-    // Animate in
     Animated.spring(scaleAnim, {
       toValue: 1,
       useNativeDriver: true,
@@ -172,7 +167,6 @@ export default function IndividualChatScreen({
       friction: 8,
     }).start();
 
-    // Auto-close after 10 seconds (Snapchat style)
     viewTimeoutRef.current = setTimeout(() => {
       handleCloseView(message);
     }, 10000) as any;
@@ -181,12 +175,10 @@ export default function IndividualChatScreen({
   const handleCloseView = async (message: Message) => {
     if (!viewingMessage) return;
 
-    // Clear timeout
     if (viewTimeoutRef.current) {
       clearTimeout(viewTimeoutRef.current);
     }
 
-    // Animate out
     Animated.spring(scaleAnim, {
       toValue: 0,
       useNativeDriver: true,
@@ -196,17 +188,8 @@ export default function IndividualChatScreen({
       setViewingMessage(null);
     });
 
-    // Delete message after viewing (Snapchat style)
-    const viewDuration = Date.now() - viewStartTime;
-    if (viewDuration > 1000) { // Only delete if viewed for more than 1 second
-      try {
-        await deleteMessage(message.id);
-        // Reload messages to update UI
-        await loadMessages();
-      } catch (error) {
-        console.error('Error deleting viewed message:', error);
-      }
-    }
+    // Refresh messages to show updated "opened" status
+    await loadMessages();
   };
 
   const handleSendTextMessage = async () => {
@@ -217,14 +200,13 @@ export default function IndividualChatScreen({
       const success = await sendMessage(
         friendId,
         messageText.trim(),
-        null, // no media URL for text messages
+        null,
         'text',
-        24 // expires in 24 hours
+        24
       );
 
       if (success) {
-        setMessageText(''); // Clear input
-        // Reload messages to show the new one
+        setMessageText('');
         await loadMessages();
       } else {
         Alert.alert('Error', 'Failed to send message. Please try again.');
@@ -237,15 +219,11 @@ export default function IndividualChatScreen({
     }
   };
 
-  // Pan responder for press and hold
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => false,
-    onPanResponderGrant: () => {
-      // Press started - handled by onPress
-    },
+    onPanResponderGrant: () => {},
     onPanResponderRelease: () => {
-      // Press ended
       if (viewingMessage) {
         handleCloseView(viewingMessage);
       }
@@ -269,7 +247,7 @@ export default function IndividualChatScreen({
           <TouchableOpacity
             style={styles.mediaMessage}
             onPress={() => handleViewMessage(item)}
-            disabled={isExpired}
+            disabled={isExpired || !!item.first_viewed_at}
           >
             <Ionicons 
               name={item.message_type === 'image' ? 'camera' : 'videocam'} 
@@ -277,41 +255,26 @@ export default function IndividualChatScreen({
               color="#FFFFFF" 
             />
             <Text style={styles.mediaText}>
-              {item.message_type === 'image' ? 'Photo' : 'Video'}
+              {item.first_viewed_at 
+                ? isFromMe 
+                  ? `Sent ${item.message_type === 'image' ? 'Photo' : 'Video'}`
+                  : 'Opened'
+                : item.message_type === 'image' ? 'Photo' : 'Video'
+              }
             </Text>
-            {!item.read_at && !isFromMe && (
+            {!item.read_at && !isFromMe && !item.first_viewed_at && (
               <View style={styles.unreadDot} />
             )}
           </TouchableOpacity>
         )}
         
-        <View style={styles.messageFooter}>
-          <Text style={styles.messageTime}>
-            {getTimeSinceSent(item.created_at)}
-          </Text>
-          {/* Read Receipt Indicators - Only show on sent messages */}
-          {isFromMe && (
-            <View style={styles.readReceiptContainer}>
-              {item.read_at ? (
-                // Double checkmark for read messages (white)
-                <View style={styles.readReceiptRead}>
-                  <Ionicons name="checkmark" size={12} color="#FFFFFF" />
-                  <Ionicons name="checkmark" size={12} color="#FFFFFF" style={styles.secondCheckmark} />
-                </View>
-              ) : (
-                // Single checkmark for delivered messages (white, slightly transparent)
-                <View style={styles.readReceiptDelivered}>
-                  <Ionicons name="checkmark" size={12} color="rgba(255, 255, 255, 0.6)" />
-                </View>
-              )}
-            </View>
-          )}
-        </View>
+        <Text style={styles.messageTime}>
+          {getTimeSinceSent(item.created_at)}
+        </Text>
       </View>
     );
   };
 
-  // Snapchat-style full-screen media viewer
   if (viewingMessage) {
     return (
       <View style={styles.fullScreenViewer}>
@@ -336,13 +299,6 @@ export default function IndividualChatScreen({
                 source={{ uri: viewingMessage.media_url }}
                 style={styles.fullScreenImage}
                 resizeMode="contain"
-                onError={() => {
-                  console.error('❌ Image failed to load');
-                  Alert.alert('Error', 'Failed to load image');
-                }}
-                onLoad={() => {
-                  console.log('✅ Image loaded successfully');
-                }}
               />
             )
           ) : (
@@ -351,7 +307,6 @@ export default function IndividualChatScreen({
             </View>
           )}
           
-          {/* Tap instructions */}
           <View style={styles.viewInstructions}>
             <Text style={styles.instructionText}>
               👆 Tap and hold to view
@@ -361,7 +316,6 @@ export default function IndividualChatScreen({
             </Text>
           </View>
 
-          {/* Sender info */}
           <View style={styles.senderInfo}>
             <Text style={styles.senderName}>
               {viewingMessage.sender_id === user?.id ? 'You' : friendName}
@@ -379,7 +333,6 @@ export default function IndividualChatScreen({
     >
       <StatusBar style="light" />
       
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
@@ -388,7 +341,6 @@ export default function IndividualChatScreen({
         <View style={styles.headerSpacer} />
       </View>
 
-      {/* Messages */}
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -397,23 +349,8 @@ export default function IndividualChatScreen({
         style={styles.messagesList}
         contentContainerStyle={styles.messagesContent}
         showsVerticalScrollIndicator={false}
-        onContentSizeChange={() => {
-          // Auto-scroll to bottom when content changes
-          if (flatListRef.current) {
-            flatListRef.current.scrollToEnd({ animated: true });
-          }
-        }}
-        onLayout={() => {
-          // Auto-scroll to bottom on initial layout
-          if (flatListRef.current && messages.length > 0) {
-            setTimeout(() => {
-              flatListRef.current?.scrollToEnd({ animated: false });
-            }, 100);
-          }
-        }}
       />
 
-      {/* Empty state */}
       {!loading && messages.length === 0 && (
         <View style={styles.emptyState}>
           <Text style={styles.emptyIcon}>📸</Text>
@@ -424,7 +361,6 @@ export default function IndividualChatScreen({
         </View>
       )}
 
-      {/* Text Input */}
       <View style={styles.inputContainer}>
         <TextInput
           style={styles.textInput}
@@ -477,7 +413,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     flex: 1,
     textAlign: 'center',
-    marginRight: 32, // Offset for back button
+    marginRight: 32,
   },
   headerSpacer: {
     width: 32,
@@ -489,10 +425,10 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   messageContainer: {
-    maxWidth: '80%',
     marginVertical: 4,
+    maxWidth: '80%',
     padding: 12,
-    borderRadius: 16,
+    borderRadius: 12,
   },
   sentMessage: {
     alignSelf: 'flex-end',
@@ -515,22 +451,24 @@ const styles = StyleSheet.create({
   mediaText: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '500',
-    marginLeft: 8,
+    fontWeight: '600',
+    marginLeft: 12,
   },
   unreadDot: {
     position: 'absolute',
     top: -4,
     right: -4,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#E10600',
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#00FF88',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
   messageTime: {
     color: '#FFFFFF',
-    fontSize: 12,
-    opacity: 0.6,
+    fontSize: 11,
+    opacity: 0.7,
     marginTop: 4,
   },
   emptyState: {
@@ -558,7 +496,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
   },
-  // Full-screen viewer styles
   fullScreenViewer: {
     position: 'absolute',
     top: 0,
@@ -619,7 +556,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     opacity: 0.7,
   },
-  // Text input styles
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -653,26 +589,5 @@ const styles = StyleSheet.create({
   sendButtonDisabled: {
     backgroundColor: '#666',
     opacity: 0.5,
-  },
-  // Read receipt styles
-  messageFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  readReceiptContainer: {
-    marginLeft: 8,
-  },
-  readReceiptRead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  readReceiptDelivered: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  secondCheckmark: {
-    marginLeft: -6, // Overlap the checkmarks slightly
   },
 }); 

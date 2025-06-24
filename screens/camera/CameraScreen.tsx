@@ -45,6 +45,7 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
   const [cameraMode, setCameraMode] = useState<'photo' | 'video'>('photo');
   const [currentVideoAsset, setCurrentVideoAsset] = useState<MediaLibrary.Asset | null>(null);
   const [muted, setMuted] = useState(false);
+  const [isCameraActive, setIsCameraActive] = useState(true);
   const cameraRef = useRef<CameraView>(null);
 
   // Create video players with proper declarative approach
@@ -120,22 +121,35 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
     };
   }, [setTabBarVisible]);
 
-  // Handle focus/blur events to manage tab bar visibility
+  // Handle focus/blur events to manage tab bar visibility AND camera lifecycle
   useFocusEffect(
     React.useCallback(() => {
-      // When screen gains focus, update tab bar based on current state
+      console.log('📱 Camera screen gained focus - activating camera');
+      // When screen gains focus, activate camera and update tab bar
+      setIsCameraActive(true);
+      
       if (setTabBarVisible) {
         const shouldHideTabBar = capturedMedia !== null || showFriendSelection;
         setTabBarVisible(!shouldHideTabBar);
       }
       
       return () => {
-        // When screen loses focus, show tab bar for other screens
+        console.log('📱 Camera screen lost focus - deactivating camera');
+        // When screen loses focus, deactivate camera and show tab bar
+        setIsCameraActive(false);
+        
+        // Stop any ongoing recording when leaving the screen
+        if (isRecording) {
+          console.log('🛑 Stopping recording due to screen navigation');
+          setIsRecording(false);
+          setIsProcessing(false);
+        }
+        
         if (setTabBarVisible) {
           setTabBarVisible(true);
         }
       };
-    }, [capturedMedia, showFriendSelection, setTabBarVisible])
+    }, [capturedMedia, showFriendSelection, setTabBarVisible, isRecording])
   );
 
   const loadFriends = async () => {
@@ -712,110 +726,123 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
     <View style={styles.container}>
       <StatusBar style="light" />
       
-      {/* Camera View */}
-      <CameraView
-        ref={cameraRef}
-        style={styles.camera}
-        facing={facing}
-        flash={flash}
-        mode={cameraMode === 'video' ? 'video' : 'picture'}
-        mute={muted}
-      />
-
-      {/* UI Overlay */}
-      <View style={styles.overlay}>
-        {/* Top Controls */}
-        <View style={styles.topControls}>
-          {/* Camera Flip Button */}
-          <TouchableOpacity style={styles.controlButton} onPress={toggleCameraFacing}>
-            <Ionicons name="camera-reverse" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.controlButton} onPress={toggleFlash}>
-            <Ionicons 
-              name={flash === 'on' ? 'flash' : 'flash-off'} 
-              size={24} 
-              color="#FFFFFF" 
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.controlButton} onPress={toggleMute}>
-            <Ionicons 
-              name={muted ? 'volume-off' : 'volume-high'} 
-              size={24} 
-              color="#FFFFFF" 
-            />
-          </TouchableOpacity>
-        </View>
-
-        {/* Recording Indicator */}
-        {isRecording && (
-          <View style={styles.recordingIndicator}>
-            <View style={styles.recordingDot} />
-          </View>
-        )}
-
-        {/* Processing Indicator */}
-        {isProcessing && (
-          <View style={styles.processingIndicator}>
-            <View style={styles.processingDot} />
-          </View>
-        )}
-
-        {/* Bottom Controls */}
-        <View style={styles.bottomControls}>
-          {/* Gallery Button (placeholder) */}
-          <TouchableOpacity style={styles.sideButton}>
-            <Ionicons name="images" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
-
-          {/* Capture Button */}
-          <TouchableOpacity
-            style={[
-              styles.captureButton, 
-              isRecording && styles.captureButtonRecording,
-              isProcessing && styles.captureButtonProcessing,
-              cameraMode === 'video' && styles.captureButtonVideo
-            ]}
-            onPress={handleCapture}
-            activeOpacity={0.8}
-            disabled={isProcessing}
-          >
-            {cameraMode === 'video' ? (
-              // Video mode: START/STOP indicator
-              <View style={styles.videoButtonContainer}>
-                <Ionicons 
-                  name={isRecording ? "stop" : "play"} 
-                  size={24} 
-                  color="#FFFFFF" 
-                />
-              </View>
-            ) : (
-              // Photo mode: simple circle
-              <View style={[
-                styles.captureButtonInner, 
-                isProcessing && styles.captureButtonInnerProcessing
-              ]} />
-            )}
-          </TouchableOpacity>
-
-          {/* Mode Switcher */}
-          <View style={styles.modeSwitcher}>
-            <TouchableOpacity
-              style={[styles.modeButton, cameraMode === 'photo' && styles.modeButtonActive]}
-              onPress={() => setCameraMode('photo')}
-            >
-              <Ionicons name="camera" size={20} color={cameraMode === 'photo' ? '#E10600' : '#FFFFFF'} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.modeButton, cameraMode === 'video' && styles.modeButtonActive]}
-              onPress={() => setCameraMode('video')}
-            >
-              <Ionicons name="videocam" size={20} color={cameraMode === 'video' ? '#E10600' : '#FFFFFF'} />
-            </TouchableOpacity>
+      {/* Camera View - Only render when camera should be active */}
+      {isCameraActive ? (
+        <CameraView
+          ref={cameraRef}
+          style={styles.camera}
+          facing={facing}
+          flash={flash}
+          mode={cameraMode === 'video' ? 'video' : 'picture'}
+          mute={muted}
+        />
+      ) : (
+        // Show a placeholder when camera is inactive
+        <View style={[styles.camera, styles.cameraInactive]}>
+          <View style={styles.cameraInactiveContent}>
+            <Ionicons name="camera" size={48} color="#666" />
+            <Text style={styles.cameraInactiveText}>Camera Paused</Text>
+            <Text style={styles.cameraInactiveSubtext}>Camera will resume when you return to this tab</Text>
           </View>
         </View>
-      </View>
+      )}
+
+      {/* UI Overlay - Only show when camera is active */}
+      {isCameraActive && (
+        <View style={styles.overlay}>
+          {/* Top Controls */}
+          <View style={styles.topControls}>
+            {/* Camera Flip Button */}
+            <TouchableOpacity style={styles.controlButton} onPress={toggleCameraFacing}>
+              <Ionicons name="camera-reverse" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.controlButton} onPress={toggleFlash}>
+              <Ionicons 
+                name={flash === 'on' ? 'flash' : 'flash-off'} 
+                size={24} 
+                color="#FFFFFF" 
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.controlButton} onPress={toggleMute}>
+              <Ionicons 
+                name={muted ? 'volume-off' : 'volume-high'} 
+                size={24} 
+                color="#FFFFFF" 
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Recording Indicator */}
+          {isRecording && (
+            <View style={styles.recordingIndicator}>
+              <View style={styles.recordingDot} />
+            </View>
+          )}
+
+          {/* Processing Indicator */}
+          {isProcessing && (
+            <View style={styles.processingIndicator}>
+              <View style={styles.processingDot} />
+            </View>
+          )}
+
+          {/* Bottom Controls */}
+          <View style={styles.bottomControls}>
+            {/* Gallery Button (placeholder) */}
+            <TouchableOpacity style={styles.sideButton}>
+              <Ionicons name="images" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+
+            {/* Capture Button */}
+            <TouchableOpacity
+              style={[
+                styles.captureButton, 
+                isRecording && styles.captureButtonRecording,
+                isProcessing && styles.captureButtonProcessing,
+                cameraMode === 'video' && styles.captureButtonVideo
+              ]}
+              onPress={handleCapture}
+              activeOpacity={0.8}
+              disabled={isProcessing}
+            >
+              {cameraMode === 'video' ? (
+                // Video mode: START/STOP indicator
+                <View style={styles.videoButtonContainer}>
+                  <Ionicons 
+                    name={isRecording ? "stop" : "play"} 
+                    size={24} 
+                    color="#FFFFFF" 
+                  />
+                </View>
+              ) : (
+                // Photo mode: simple circle
+                <View style={[
+                  styles.captureButtonInner, 
+                  isProcessing && styles.captureButtonInnerProcessing
+                ]} />
+              )}
+            </TouchableOpacity>
+
+            {/* Mode Switcher */}
+            <View style={styles.modeSwitcher}>
+              <TouchableOpacity
+                style={[styles.modeButton, cameraMode === 'photo' && styles.modeButtonActive]}
+                onPress={() => setCameraMode('photo')}
+              >
+                <Ionicons name="camera" size={20} color={cameraMode === 'photo' ? '#E10600' : '#FFFFFF'} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modeButton, cameraMode === 'video' && styles.modeButtonActive]}
+                onPress={() => setCameraMode('video')}
+              >
+                <Ionicons name="videocam" size={20} color={cameraMode === 'video' ? '#E10600' : '#FFFFFF'} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -1372,5 +1399,24 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  cameraInactive: {
+    backgroundColor: '#000000',
+  },
+  cameraInactiveContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cameraInactiveText: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 16,
+  },
+  cameraInactiveSubtext: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    opacity: 0.8,
   },
 }); 
