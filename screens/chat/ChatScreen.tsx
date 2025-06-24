@@ -1,64 +1,206 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { Ionicons } from '@expo/vector-icons';
+import { getConversations, subscribeToMessages, type Conversation } from '../../services/messagesService';
+import { useAuth } from '../../contexts/AuthContext';
+import IndividualChatScreen from './IndividualChatScreen';
 
-export default function ChatScreen() {
+interface ChatScreenProps {
+  onChatPress?: (friendId: string, friendName: string) => void;
+}
+
+export default function ChatScreen({ onChatPress }: ChatScreenProps) {
+  const { user } = useAuth();
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedChat, setSelectedChat] = useState<{ friendId: string; friendName: string } | null>(null);
+
+  useEffect(() => {
+    loadConversations();
+    
+    // Subscribe to new messages for real-time updates
+    let subscription: any;
+    if (user?.id) {
+      subscription = subscribeToMessages(user.id, () => {
+        // Reload conversations when new message arrives
+        loadConversations();
+      });
+    }
+
+    return () => {
+      if (subscription) {
+        subscription.unsubscribe();
+      }
+    };
+  }, [user]);
+
+  const loadConversations = async () => {
+    try {
+      const convos = await getConversations();
+      setConversations(convos);
+    } catch (error) {
+      console.error('Error loading conversations:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    loadConversations();
+  };
+
+  const handleChatPress = (friendId: string, friendName: string) => {
+    setSelectedChat({ friendId, friendName });
+    // Also call the prop function if provided
+    onChatPress?.(friendId, friendName);
+  };
+
+  const handleBackFromChat = () => {
+    setSelectedChat(null);
+    // Reload conversations to update read status
+    loadConversations();
+  };
+
+  const formatTime = (dateString: string): string => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffMins < 1) return 'now';
+    if (diffMins < 60) return `${diffMins}m`;
+    if (diffHours < 24) return `${diffHours}h`;
+    if (diffDays < 7) return `${diffDays}d`;
+    return date.toLocaleDateString();
+  };
+
+  const getMessagePreview = (conversation: Conversation): string => {
+    const message = conversation.last_message;
+    if (!message) return 'No messages yet';
+    
+    if (message.message_type === 'image') return '📸 Photo';
+    if (message.message_type === 'video') return '🎥 Video';
+    
+    return message.content || 'Media message';
+  };
+
+  const renderConversation = (conversation: Conversation) => (
+    <TouchableOpacity
+      key={conversation.friend_id}
+      style={[
+        styles.chatItem,
+        conversation.unread_count > 0 && styles.unreadChatItem
+      ]}
+      onPress={() => handleChatPress(conversation.friend_id, conversation.friend_name)}
+    >
+      <View style={styles.chatAvatar}>
+        <Text style={styles.avatarText}>
+          {conversation.friend_name.charAt(0).toUpperCase()}
+        </Text>
+      </View>
+      
+      <View style={styles.chatInfo}>
+        <View style={styles.chatHeader}>
+          <Text style={[
+            styles.chatName,
+            conversation.unread_count > 0 && styles.unreadChatName
+          ]}>
+            {conversation.friend_name}
+          </Text>
+          {conversation.unread_count > 0 && (
+            <View style={styles.unreadBadge}>
+              <Text style={styles.unreadCount}>
+                {conversation.unread_count > 9 ? '9+' : conversation.unread_count}
+              </Text>
+            </View>
+          )}
+        </View>
+        <Text style={[
+          styles.chatPreview,
+          conversation.unread_count > 0 && styles.unreadChatPreview
+        ]}>
+          {getMessagePreview(conversation)}
+        </Text>
+      </View>
+
+      <View style={styles.chatMeta}>
+        <Text style={styles.chatTime}>
+          {formatTime(conversation.updated_at)}
+        </Text>
+        {conversation.last_message?.message_type !== 'text' && (
+          <Ionicons 
+            name={conversation.last_message?.message_type === 'image' ? 'camera' : 'videocam'} 
+            size={12} 
+            color="#E10600" 
+            style={styles.mediaIcon}
+          />
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+
+  // Show individual chat if selected
+  if (selectedChat) {
+    return (
+      <IndividualChatScreen
+        friendId={selectedChat.friendId}
+        friendName={selectedChat.friendName}
+        onBack={handleBackFromChat}
+      />
+    );
+  }
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
       
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerText}>F1 Chats</Text>
+        <Text style={styles.headerText}>Chats</Text>
       </View>
 
       {/* Content */}
-      <ScrollView style={styles.content}>
-        <View style={styles.welcomeSection}>
-          <Text style={styles.title}>💬 Race Community</Text>
-          <Text style={styles.subtitle}>
-            Connect with F1 fans worldwide{'\n'}
-            Coming in Phase 7
-          </Text>
-        </View>
-
-        {/* Placeholder Chat Items */}
-        <View style={styles.chatList}>
-          <Text style={styles.sectionTitle}>Upcoming Features:</Text>
-          
-          <TouchableOpacity style={styles.chatItem}>
-            <View style={styles.chatAvatar}>
-              <Text style={styles.avatarText}>🏎️</Text>
-            </View>
-            <View style={styles.chatInfo}>
-              <Text style={styles.chatName}>Team Red Bull Fans</Text>
-              <Text style={styles.chatPreview}>Phase 7: Group chats</Text>
-            </View>
-            <Text style={styles.chatTime}>Soon</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.chatItem}>
-            <View style={styles.chatAvatar}>
-              <Text style={styles.avatarText}>🏁</Text>
-            </View>
-            <View style={styles.chatInfo}>
-              <Text style={styles.chatName}>Race Weekend Updates</Text>
-              <Text style={styles.chatPreview}>Phase 7: Direct messaging</Text>
-            </View>
-            <Text style={styles.chatTime}>Soon</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.chatItem}>
-            <View style={styles.chatAvatar}>
-              <Text style={styles.avatarText}>⚡</Text>
-            </View>
-            <View style={styles.chatInfo}>
-              <Text style={styles.chatName}>Live Race Commentary</Text>
-              <Text style={styles.chatPreview}>Phase 7: Ephemeral messages</Text>
-            </View>
-            <Text style={styles.chatTime}>Soon</Text>
-          </TouchableOpacity>
-        </View>
+      <ScrollView 
+        style={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={['#E10600']}
+            tintColor="#E10600"
+          />
+        }
+      >
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Loading conversations...</Text>
+          </View>
+        ) : conversations.length > 0 ? (
+          <View style={styles.chatList}>
+            <Text style={styles.sectionTitle}>
+              Recent Conversations ({conversations.length})
+            </Text>
+            {conversations.map(renderConversation)}
+          </View>
+        ) : (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyIcon}>💬</Text>
+            <Text style={styles.emptyTitle}>No conversations yet</Text>
+            <Text style={styles.emptyText}>
+              Add friends and start sending photos{'\n'}
+              to see conversations here!
+            </Text>
+            <Text style={styles.emptyHint}>
+              📸 Go to Camera → Capture → Send to friends
+            </Text>
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -85,27 +227,20 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
-  welcomeSection: {
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 40,
-    paddingHorizontal: 20,
+    paddingTop: 100,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  subtitle: {
+  loadingText: {
     fontSize: 16,
     color: '#FFFFFF',
-    opacity: 0.8,
-    textAlign: 'center',
-    lineHeight: 24,
+    opacity: 0.7,
   },
   chatList: {
     paddingHorizontal: 20,
+    paddingTop: 20,
   },
   sectionTitle: {
     fontSize: 18,
@@ -122,7 +257,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 12,
     borderLeftWidth: 3,
+    borderLeftColor: 'rgba(225, 6, 0, 0.3)',
+  },
+  unreadChatItem: {
     borderLeftColor: '#E10600',
+    backgroundColor: '#252532',
   },
   chatAvatar: {
     width: 50,
@@ -135,24 +274,88 @@ const styles = StyleSheet.create({
   },
   avatarText: {
     fontSize: 20,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   chatInfo: {
     flex: 1,
+  },
+  chatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
   },
   chatName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
-    marginBottom: 4,
+    flex: 1,
+  },
+  unreadChatName: {
+    fontWeight: '700',
+  },
+  unreadBadge: {
+    backgroundColor: '#E10600',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  unreadCount: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   chatPreview: {
     fontSize: 14,
     color: '#FFFFFF',
     opacity: 0.7,
   },
+  unreadChatPreview: {
+    fontWeight: '500',
+    opacity: 0.9,
+  },
+  chatMeta: {
+    alignItems: 'flex-end',
+  },
   chatTime: {
     fontSize: 12,
     color: '#E10600',
     fontWeight: '500',
+  },
+  mediaIcon: {
+    marginTop: 4,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 80,
+    paddingHorizontal: 40,
+  },
+  emptyIcon: {
+    fontSize: 48,
+    marginBottom: 20,
+  },
+  emptyTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 12,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    opacity: 0.7,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 20,
+  },
+  emptyHint: {
+    fontSize: 14,
+    color: '#E10600',
+    fontWeight: '500',
+    textAlign: 'center',
   },
 }); 
