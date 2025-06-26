@@ -11,6 +11,7 @@ import StoriesScreen from '../screens/stories/StoriesScreen';
 import StoryComposerScreen from '../screens/stories/StoryComposerScreen';
 import StoryViewerScreen from '../screens/stories/StoryViewerScreen';
 import MyStoriesScreen from '../screens/stories/MyStoriesScreen';
+import AskPaddockScreen from '../screens/paddock/AskPaddockScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -57,6 +58,15 @@ export default function AppNavigation() {
           tabBarInactiveTintColor: '#FFFFFF',
         }}
       >
+        <Tab.Screen
+          name="Paddock"
+          component={AskPaddockScreen}
+          options={{
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="hardware-chip" size={size} color={color} />
+            ),
+          }}
+        />
         <Tab.Screen
           name="Chats"
           component={ChatScreen}

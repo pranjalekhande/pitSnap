@@ -8,7 +8,7 @@
 
 PitSnap is a **Snapchat-inspired social media app** with F1 theming, featuring ephemeral messaging, 24-hour stories, real-time chat, and camera functionality. Built with React Native, Expo, and Supabase.
 
-### ✅ **Current Features (75% Complete)**
+### ✅ **Current Features (85% Complete)**
 - 🔐 **User Authentication** - Login/Signup with Supabase Auth
 - 📸 **Camera System** - Photo/video capture with front/back camera
 - 💬 **Real-time Messaging** - Text + media messages with read receipts  
@@ -16,6 +16,105 @@ PitSnap is a **Snapchat-inspired social media app** with F1 theming, featuring e
 - 👥 **Friends System** - Add friends, manage connections
 - ⏱️ **Ephemeral Content** - Messages disappear after viewing
 - 🎨 **F1 Theming** - Racing-inspired UI with red/black color scheme
+- 🤖 **Paddock AI** - Advanced F1 strategic analysis and chatbot
+
+---
+
+## 🤖 **Paddock AI - Advanced F1 Strategic Analysis**
+
+### **🏎️ Features**
+- **🔍 What-If Analysis**: "What if Hamilton had pitted earlier at Abu Dhabi 2021?"
+- **📚 Historical Strategy Detective**: Find similar scenarios from F1 history
+- **🏆 Driver Rankings**: Current championship standings and points
+- **🏁 Tire Strategy Analysis**: Detailed race strategy breakdowns
+- **⚡ Strategic Scenarios**: Monaco rain decisions, safety car calls, pit window analysis
+- **🎯 Quick Actions**: 6 discoverable buttons for instant strategic insights
+
+### **🧠 Technical Architecture**
+- **Backend**: FastAPI + LangChain agent system with specialized tools
+- **AI Engine**: OpenAI GPT-4 for strategic reasoning and analysis
+- **Knowledge Base**: Pinecone vector database with F1 strategic knowledge
+- **Data Sources**: Real F1 APIs with intelligent fallback systems
+- **Tools**: 6 specialized strategic analysis tools for different scenarios
+
+### **🚀 Paddock AI Setup**
+
+#### **1. Backend Setup**
+```bash
+cd paddock-ai-backend
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+#### **2. Environment Variables**
+Create `paddock-ai-backend/.env` file:
+```env
+OPENAI_API_KEY=your_openai_api_key
+PINECONE_API_KEY=your_pinecone_api_key
+PINECONE_INDEX_NAME=your_pinecone_index_name
+```
+
+#### **3. Start Paddock AI Backend**
+```bash
+cd paddock-ai-backend
+source venv/bin/activate
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+#### **4. Configure Frontend**
+In `services/paddockAiService.ts`:
+```typescript
+// For iOS Simulator:
+const API_URL = "http://127.0.0.1:8000";
+
+// For Physical Device:
+const API_URL = "http://YOUR_LOCAL_IP:8000";
+```
+
+### **🧪 Test Paddock AI**
+
+#### **Quick Test Commands**
+```bash
+# Test backend directly
+curl -X POST "http://127.0.0.1:8000/ask" \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What is Max Verstappen ranking?"}'
+
+# Test What-If Analysis
+curl -X POST "http://127.0.0.1:8000/ask" \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What if Verstappen had pitted 5 laps earlier in Abu Dhabi 2024?"}'
+```
+
+#### **Mobile App Testing**
+1. **Start both servers** (React Native + Paddock AI backend)
+2. **Navigate to Paddock AI** screen in the app
+3. **Try Quick Actions**: Tap colorful strategic feature buttons
+4. **Ask Questions**: 
+   - "Show me rain strategy decisions from F1 history"
+   - "Compare tire strategies from the most recent race"
+   - "What are the current championship standings?"
+
+### **📊 Strategic Analysis Examples**
+
+#### **What-If Scenarios**
+- Alternative pit stop timing analysis
+- Different tire compound strategies
+- Safety car decision impacts
+- Weather-related strategic choices
+
+#### **Historical Comparisons**
+- Brazil 2008 Hamilton championship decider
+- Turkey 2020 Perez breakthrough victory
+- Abu Dhabi 2021 controversial finish
+- Monaco strategy disasters and successes
+
+#### **Real-time Data**
+- Current driver championship standings
+- Recent race winner and results
+- Tire strategy analysis from latest GP
+- Performance comparisons (qualifying vs race)
 
 ---
 
@@ -28,21 +127,31 @@ pitSnap/
 │   ├── camera/             # Camera functionality
 │   ├── chat/               # Individual & group chat
 │   ├── friends/            # Friend management
+│   ├── paddock/            # Paddock AI strategic analysis
 │   ├── profile/            # User profiles
 │   └── stories/            # Stories system (4 screens)
 ├── services/               # Backend service layers
 │   ├── messagesService.ts  # Chat & messaging logic
 │   ├── storiesService.ts   # Stories CRUD operations
 │   ├── friendsService.ts   # Friend management
+│   ├── paddockAiService.ts # Paddock AI communication
 │   └── mediaService.ts     # File upload/storage
+├── components/             # Reusable components
+│   └── paddock/            # Paddock AI UI components
 ├── contexts/               # React contexts
 │   └── AuthContext.tsx     # Authentication state
 ├── navigation/             # App navigation
 │   ├── AppNavigation.tsx   # Main tab navigation
 │   └── AuthNavigator.tsx   # Auth flow navigation
-├── components/             # Reusable components
 ├── lib/                    # Configuration
 │   └── supabase.ts        # Supabase client setup
+├── paddock-ai-backend/     # F1 Strategic Analysis Backend
+│   ├── main.py            # FastAPI + LangChain agent
+│   ├── f1_api_client.py   # F1 data with fallbacks
+│   ├── what_if_explorer.py # Strategic scenario analysis
+│   ├── historical_strategy_detective.py # F1 case studies
+│   ├── knowledge_base_pipeline.py # Vector database setup
+│   └── requirements.txt   # Python dependencies
 └── docs/                  # Project documentation
 ```
 
@@ -59,11 +168,14 @@ pitSnap/
 - **Camera**: expo-camera + expo-media-library
 
 ### **Backend & Database**
-- **Backend**: Supabase (PostgreSQL + Real-time + Auth + Storage)
+- **Main Backend**: Supabase (PostgreSQL + Real-time + Auth + Storage)
+- **AI Backend**: FastAPI + LangChain + OpenAI GPT-4
 - **Authentication**: Supabase Auth (email/password)
 - **Database**: PostgreSQL with Row Level Security (RLS)
+- **Vector Database**: Pinecone for F1 strategic knowledge
 - **Storage**: Supabase Storage for photos/videos
 - **Real-time**: Supabase Realtime subscriptions
+- **AI Tools**: 6 specialized F1 strategic analysis tools
 
 ### **Database Schema**
 ```sql
@@ -227,14 +339,19 @@ eas build --platform all --profile production
 
 ## 📊 **Project Status & Roadmap**
 
-### **✅ Completed (Phase 1-7)**
+### **✅ Completed (Phase 1-8)**
 - Core Snapchat functionality
 - Complete Stories system
 - Real-time messaging
 - User authentication & friends
 - Camera integration
+- **Paddock AI**: Advanced F1 strategic analysis system
+- **What-If Explorer**: Alternative strategic scenario analysis
+- **Historical Strategy Detective**: F1 strategic case studies
+- **Strategic Quick Actions**: 6 discoverable feature buttons
 
-### **🔄 Next Steps (Phase 8)**
+### **🔄 Next Steps (Phase 9)**
+- Enhanced Paddock AI with live race data integration
 - Mixed conversation support (text + media together)
 - Reply functionality with message threading
 - Group messaging 
@@ -242,11 +359,14 @@ eas build --platform all --profile production
 - Basic AR filters with F1 theming
 
 ### **🎯 Future Features**
+- **Advanced Paddock AI**: Race Engineer mode, Strategy Builder, Team Principal challenges
+- **Live F1 Integration**: Real-time race data, live strategy analysis during GPs
+- **AI-Powered Predictions**: Race outcome predictions, strategy recommendations
 - F1 team theming and customization
-- Race weekend special modes
-- Live F1 timing data integration
+- Race weekend special modes with Paddock AI insights
 - Advanced AR filters (helmet overlays)
 - Voice messaging (team radio style)
+- **Strategic Social Features**: Share strategy analysis, debate scenarios with friends
 
 ---
 

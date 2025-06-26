@@ -7,7 +7,7 @@ This document provides a granular, technical checklist for building the Paddock 
 -   **LLM**: OpenAI (GPT-4)
 -   **Vector Store**: Pinecone
 -   **API Framework**: FastAPI
--   **Live Data**: Ergast F1 API (for development)
+-   **Live Data**: Ergast API (for development - a reliable and long-standing source)
 
 ---
 
@@ -39,7 +39,7 @@ This document provides a granular, technical checklist for building the Paddock 
 *A module within the backend service, e.g., `f1_api_client.py`.*
 
 -   Create a simple Python client with a function `get_latest_race_events()`.
--   This function will call the Ergast F1 API to get the latest race results or live data. It will parse the JSON and return a simple list of events.
+-   This function will call the Ergast API to get the latest race results or live data. It will parse the JSON and return a simple list of events.
 
 ---
 

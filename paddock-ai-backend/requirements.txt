@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+langchain
+langchain-community
+langchain-openai
+langchain-pinecone
+pinecone
+python-dotenv
+requests
+beautifulsoup4
+lxml 
