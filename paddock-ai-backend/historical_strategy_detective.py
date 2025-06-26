@@ -52,30 +52,18 @@ class HistoricalStrategyDetective:
         
         cases = self.strategic_cases[category]
         
-        analysis = f"🔍 **Historical Strategy Detective: {title}**\n\n"
-        analysis += f"**Your Query:** {user_scenario}\n\n"
-        analysis += f"**Similar Historical Cases:**\n\n"
+        analysis = f"🔍 **{title} - Historical Cases**\n\n"
         
-        for i, case in enumerate(cases, 1):
-            analysis += f"**Case {i}: {case['race']}**\n"
-            analysis += f"• **Situation:** {case['situation']}\n"
-            analysis += f"• **Decision:** {case['decision']}\n"
-            analysis += f"• **Outcome:** {case['outcome']}\n"
-            analysis += f"• **Lesson:** {case['lesson']}\n\n"
+        for i, case in enumerate(cases[:2], 1):  # Limit to 2 cases
+            analysis += f"**{case['race']}**\n"
+            analysis += f"• {case['situation']}\n"
+            analysis += f"• Result: {case['outcome']}\n"
+            analysis += f"• Key Lesson: {case['lesson']}\n\n"
         
-        analysis += f"**Historical Patterns:**\n"
+        # Simplified patterns
         successes = [c for c in cases if "SUCCESS" in c['outcome']]
-        failures = [c for c in cases if "FAILURE" in c['outcome']]
-        
         if successes:
-            analysis += f"**What Usually Works:**\n"
-            for case in successes:
-                analysis += f"• {case['lesson']}\n"
-        
-        if failures:
-            analysis += f"\n**Common Pitfalls:**\n"
-            for case in failures:
-                analysis += f"• {case['lesson']}\n"
+            analysis += f"**What Works:** {successes[0]['lesson']}\n"
         
         return analysis
     

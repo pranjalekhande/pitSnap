@@ -16,6 +16,7 @@ import TypingIndicator from '../../components/paddock/TypingIndicator';
 interface Message {
   text: string;
   isUser: boolean;
+  expanded?: boolean;
 }
 
 interface QuickAction {
@@ -30,42 +31,43 @@ export default function AskPaddockScreen() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(true);
+  const [expandedMessages, setExpandedMessages] = useState<Set<number>>(new Set());
 
-  // Strategic feature quick actions
+  // Strategic feature quick actions - optimized for shorter responses
   const quickActions: QuickAction[] = [
     {
       title: "What-If Analysis",
-      prompt: "What if Verstappen had pitted 5 laps earlier in Abu Dhabi 2024?",
+      prompt: "Quick what-if: Verstappen Spanish GP 2024 different strategy?",
       icon: "analytics",
       color: "#00D2FF"
     },
     {
       title: "Historical Strategy",
-      prompt: "Show me similar rain strategy decisions from F1 history",
+      prompt: "Brief: rain strategy examples from F1 history",
       icon: "library",
       color: "#FF6B35"
     },
     {
       title: "Driver Rankings",
-      prompt: "What is Max Verstappen's current championship ranking?",
+      prompt: "Quick check: current 2024 championship standings?",
       icon: "trophy",
       color: "#FFD700"
     },
     {
       title: "Tire Strategy",
-      prompt: "Analyze the tire strategies from the most recent F1 race",
+      prompt: "Brief: Spanish GP tire strategies summary",
       icon: "car-sport",
       color: "#00C851"
     },
     {
       title: "Race Winner",
-      prompt: "Who won the most recent F1 Grand Prix?",
+      prompt: "Quick: latest GP winner and results?",
       icon: "flag",
       color: "#E10600"
     },
     {
-      title: "Strategy History",
-      prompt: "Find similar safety car strategy decisions from F1 history",
+      title: "Next Race",
+      prompt: "Brief: Canadian GP info and preview",
       icon: "time",
       color: "#9C27B0"
     }
@@ -122,13 +124,56 @@ export default function AskPaddockScreen() {
     setLoading(false);
   };
 
-  const formatAIResponse = (text: string) => {
+  const formatAIResponse = (text: string, messageIndex: number, isExpanded: boolean) => {
     // Enhanced formatting for strategic analysis
-    return text
+    let formatted = text
       .replace(/\*\*(.*?)\*\*/g, '$1') // Remove markdown bold
       .replace(/^\*\s/gm, '• ') // Convert markdown lists to bullets
       .replace(/^#\s(.*$)/gm, '$1') // Remove markdown headers
       .trim();
+    
+    // Limit response length for better mobile experience if not expanded
+    const maxLength = 300; // ~2-3 sentences for preview
+    const needsTruncation = formatted.length > maxLength;
+    
+    if (!isExpanded && needsTruncation) {
+      formatted = formatted.substring(0, maxLength).trim() + '...';
+    }
+    
+    return { formatted, needsTruncation };
+  };
+
+  const toggleMessageExpansion = (messageIndex: number) => {
+    const newExpandedMessages = new Set(expandedMessages);
+    if (expandedMessages.has(messageIndex)) {
+      newExpandedMessages.delete(messageIndex);
+    } else {
+      newExpandedMessages.add(messageIndex);
+    }
+    setExpandedMessages(newExpandedMessages);
+  };
+
+  const requestMoreInformation = async (messageIndex: number) => {
+    if (loading) return;
+    
+    const originalMessage = messages[messageIndex];
+    if (originalMessage.isUser) return;
+    
+    // Create a follow-up question for more details
+    const followUpPrompt = "Please provide more detailed information about your previous answer, including additional context and analysis.";
+    
+    const userMessage: Message = { text: followUpPrompt, isUser: true };
+    const newMessages = [...messages, userMessage];
+    
+    setMessages(newMessages);
+    setLoading(true);
+
+    const history = messages;
+    const aiResponse = await askPaddock(followUpPrompt, history);
+    const aiMessage: Message = { text: aiResponse, isUser: false };
+    
+    setMessages(prev => [...prev, aiMessage]);
+    setLoading(false);
   };
 
   return (
@@ -166,16 +211,45 @@ export default function AskPaddockScreen() {
         )}
 
         {/* Chat Messages */}
-        {messages.map((msg, index) => (
-          <View 
-            key={index} 
-            style={[styles.messageBubble, msg.isUser ? styles.userBubble : styles.aiBubble]}
-          >
-            <Text style={[styles.messageText, msg.isUser ? styles.userText : styles.aiText]}>
-              {msg.isUser ? msg.text : formatAIResponse(msg.text)}
-            </Text>
-          </View>
-        ))}
+        {messages.map((msg, index) => {
+          const isExpanded = expandedMessages.has(index);
+          const aiResponse = !msg.isUser ? formatAIResponse(msg.text, index, isExpanded) : null;
+          
+          return (
+            <View 
+              key={index} 
+              style={[styles.messageBubble, msg.isUser ? styles.userBubble : styles.aiBubble]}
+            >
+              <Text style={[styles.messageText, msg.isUser ? styles.userText : styles.aiText]}>
+                {msg.isUser ? msg.text : aiResponse?.formatted}
+              </Text>
+              
+              {/* Show expand/collapse button for AI messages that need truncation */}
+              {!msg.isUser && aiResponse?.needsTruncation && (
+                <TouchableOpacity
+                  style={styles.expandButton}
+                  onPress={() => toggleMessageExpansion(index)}
+                >
+                  <Text style={styles.expandButtonText}>
+                    {isExpanded ? '📖 Show less' : '📚 Read more'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              
+              {/* More information button for AI messages */}
+              {!msg.isUser && (
+                <TouchableOpacity
+                  style={styles.moreInfoButton}
+                  onPress={() => requestMoreInformation(index)}
+                >
+                  <Text style={styles.moreInfoButtonText}>
+                    💡 More details
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          );
+        })}
         
         {loading && (
           <View style={[styles.messageBubble, styles.aiBubble]}>
@@ -317,6 +391,34 @@ const styles = StyleSheet.create({
   },
   aiText: {
     color: '#E0E0E0',
+  },
+  expandButton: {
+    marginTop: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#333',
+    borderRadius: 15,
+    alignSelf: 'flex-start',
+  },
+  expandButtonText: {
+    color: '#00D2FF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  moreInfoButton: {
+    marginTop: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(0, 210, 255, 0.1)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#00D2FF',
+    alignSelf: 'flex-start',
+  },
+  moreInfoButtonText: {
+    color: '#00D2FF',
+    fontSize: 11,
+    fontWeight: '500',
   },
   inputContainer: {
     flexDirection: 'row',
