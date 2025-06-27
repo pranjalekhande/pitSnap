@@ -2,7 +2,7 @@
 // to switch between a local dev URL and a live production URL.
 
 // Choose based on your testing method:
-const API_URL = "http://10.0.0.69:8000";  // For physical phone on local network
+const API_URL = "http://10.0.0.210:8000";  // For physical phone on local network
 // const API_URL = "http://127.0.0.1:8000";  // For simulator only
 
 interface Message {
