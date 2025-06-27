@@ -13,6 +13,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { VideoView, useVideoPlayer } from 'expo-video';
+import { useEvent } from 'expo';
 import * as MediaLibrary from 'expo-media-library';
 import { Ionicons } from '@expo/vector-icons';
 import { getFriends, type User } from '../../services/friendsService';
@@ -94,6 +95,13 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
     }
   );
 
+  // Use expo's useEvent hook to track video playing state properly
+  const { isPlaying: isVideoPlaying } = useEvent(fullVideoPlayer, 'playingChange', { 
+    isPlaying: fullVideoPlayer?.playing || false 
+  });
+
+  // Video player state tracking (debugging removed)
+
   // Check permissions on component mount
   useEffect(() => {
     (async () => {
@@ -128,6 +136,8 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
       fullVideoPlayer.muted = muted;
     }
   }, [muted, fullVideoPlayer, capturedMedia]);
+
+  // Note: Video playing state is automatically managed by useEvent hook
 
   // Cleanup: Show tab bar when component unmounts
   useEffect(() => {
@@ -328,6 +338,22 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
 
   const toggleMute = () => {
     setMuted(current => !current);
+  };
+
+  const handlePlayPause = () => {
+    if (!fullVideoPlayer || capturedMedia?.type !== 'video') {
+      return;
+    }
+    
+    try {
+      if (isVideoPlaying) {
+        fullVideoPlayer.pause();
+      } else {
+        fullVideoPlayer.play();
+      }
+    } catch (error) {
+      console.error('Error controlling video playback:', error);
+    }
   };
 
   // Snapchat filter handlers (consolidated filter system)
@@ -628,14 +654,30 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
         
         {/* Media Preview */}
         {capturedMedia.type === 'video' && capturedMedia.uri ? (
-          <VideoView
-            style={styles.fullPreview}
-            player={fullVideoPlayer}
-            allowsFullscreen={false}
-            allowsPictureInPicture={false}
-            nativeControls={false}
-            contentFit="contain"
-          />
+          <View style={styles.videoPreviewContainer}>
+            <VideoView
+              style={styles.fullPreview}
+              player={fullVideoPlayer}
+              allowsFullscreen={false}
+              allowsPictureInPicture={false}
+              nativeControls={false}
+              contentFit="contain"
+            />
+            {/* Central Play/Pause Button */}
+            <TouchableOpacity
+              style={styles.centralPlayPauseButton}
+              onPress={handlePlayPause}
+              activeOpacity={0.8}
+            >
+              <View style={styles.centralPlayPauseButtonInner}>
+                <Ionicons 
+                  name={isVideoPlaying ? 'stop' : 'play'} 
+                  size={32} 
+                  color="#FFFFFF" 
+                />
+              </View>
+            </TouchableOpacity>
+          </View>
         ) : (
           <Image source={{ uri: capturedMedia.uri }} style={styles.fullPreview} />
         )}
@@ -658,19 +700,21 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
               <Ionicons name="chevron-back" size={28} color="#FFFFFF" />
             </TouchableOpacity>
 
-            {/* Mute button for video preview or spacer for photos */}
+            {/* Video controls or spacer for photos */}
             {capturedMedia?.type === 'video' ? (
-              <TouchableOpacity 
-                style={styles.previewMuteButton} 
-                onPress={toggleMute}
-                activeOpacity={0.7}
-              >
-                <Ionicons 
-                  name={muted ? 'volume-off' : 'volume-high'} 
-                  size={24} 
-                  color="#FFFFFF" 
-                />
-              </TouchableOpacity>
+              <View style={styles.previewVideoControls}>
+                <TouchableOpacity 
+                  style={styles.previewMuteButton} 
+                  onPress={toggleMute}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons 
+                    name={muted ? 'volume-off' : 'volume-high'} 
+                    size={24} 
+                    color="#FFFFFF" 
+                  />
+                </TouchableOpacity>
+              </View>
             ) : (
               <View style={styles.previewSpacer} />
             )}
@@ -705,7 +749,7 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
               style={styles.snapchatStoriesButton} 
               onPress={() => {
                 // Navigate to StoryComposer with the captured media
-                (navigation as any).navigate('Stories', {
+                (navigation as any).navigate('Pit Wall', {
                   screen: 'StoryComposer',
                   params: {
                     mediaUri: capturedMedia.uri,
@@ -1580,6 +1624,36 @@ const styles = StyleSheet.create({
     height: 1,
     opacity: 0,
     pointerEvents: 'none', // Prevent any touch interference
+  },
+  // Video preview controls
+  videoPreviewContainer: {
+    flex: 1,
+    position: 'relative',
+  },
+  centralPlayPauseButton: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -35 }, { translateY: -35 }],
+    zIndex: 5,
+  },
+  centralPlayPauseButtonInner: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  previewVideoControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
 
 }); 

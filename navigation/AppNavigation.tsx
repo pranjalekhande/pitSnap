@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import CameraScreen from '../screens/camera/CameraScreen';
 import ChatScreen from '../screens/chat/ChatScreen';
 import ProfileScreen from '../screens/profile/ProfileScreen';
-import StoriesScreen from '../screens/stories/StoriesScreen';
+import PitWallScreen from '../screens/pit-wall/PitWallScreen';
 import StoryComposerScreen from '../screens/stories/StoryComposerScreen';
 import StoryViewerScreen from '../screens/stories/StoryViewerScreen';
 import MyStoriesScreen from '../screens/stories/MyStoriesScreen';
@@ -16,8 +16,8 @@ import AskPaddockScreen from '../screens/paddock/AskPaddockScreen';
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
-// Stories Stack Navigator
-function StoriesStackNavigator() {
+// Pit Wall Stack Navigator  
+function PitWallStackNavigator() {
   return (
     <Stack.Navigator
       screenOptions={{
@@ -25,7 +25,7 @@ function StoriesStackNavigator() {
         cardStyle: { backgroundColor: '#15151E' },
       }}
     >
-      <Stack.Screen name="StoriesFeed" component={StoriesScreen} />
+      <Stack.Screen name="PitWallFeed" component={PitWallScreen} />
       <Stack.Screen name="StoryComposer" component={StoryComposerScreen} />
       <Stack.Screen name="StoryViewer" component={StoryViewerScreen} />
       <Stack.Screen name="MyStories" component={MyStoriesScreen} />
@@ -77,11 +77,11 @@ export default function AppNavigation() {
           }}
         />
         <Tab.Screen
-          name="Stories"
-          component={StoriesStackNavigator}
+          name="Pit Wall"
+          component={PitWallStackNavigator}
           options={{
             tabBarIcon: ({ color, size }) => (
-              <Ionicons name="book" size={size} color={color} />
+              <Ionicons name="flag" size={size} color={color} />
             ),
           }}
         />
