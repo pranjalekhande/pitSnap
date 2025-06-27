@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List
 import os
@@ -16,13 +17,18 @@ try:
     from f1_api_client import get_latest_race_winner, get_driver_ranking, get_tire_strategy_analysis, get_championship_standings, get_next_race_info
     from what_if_explorer import what_if_explorer
     from historical_strategy_detective import historical_detective
+    from f1_service import F1DataService
 except ImportError:
     from .f1_api_client import get_latest_race_winner, get_driver_ranking, get_tire_strategy_analysis, get_championship_standings, get_next_race_info
     from .what_if_explorer import what_if_explorer
     from .historical_strategy_detective import historical_detective
+    from .f1_service import F1DataService
 
 # Load environment variables
 load_dotenv()
+
+# Initialize F1 Data Service
+f1_service = F1DataService()
 
 # --- LangChain Agent Setup ---
 
@@ -187,6 +193,15 @@ app = FastAPI(
     version="0.3.0"
 )
 
+# Add CORS middleware to allow Expo app to access the API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for development
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods
+    allow_headers=["*"],  # Allow all headers
+)
+
 # Data Models (simplified for now)
 class QuestionRequest(BaseModel):
     question: str
@@ -247,6 +262,67 @@ def update_knowledge_base():
             "status": "error",
             "message": f"Exception occurred: {str(e)}"
         }
+
+# F1 Data Endpoints for Pit Wall
+@app.get("/f1/schedule")
+def get_f1_schedule():
+    """
+    Get the 2025 F1 race schedule
+    """
+    try:
+        return f1_service.get_2025_schedule()
+    except Exception as e:
+        return {"error": f"Failed to fetch F1 schedule: {str(e)}"}
+
+@app.get("/f1/next-race")
+def get_next_race():
+    """
+    Get information about the next upcoming F1 race
+    """
+    try:
+        return f1_service.get_next_race()
+    except Exception as e:
+        return {"error": f"Failed to fetch next race: {str(e)}"}
+
+@app.get("/f1/latest-results")
+def get_latest_results():
+    """
+    Get results from the most recent completed F1 race
+    """
+    try:
+        return f1_service.get_latest_race_results()
+    except Exception as e:
+        return {"error": f"Failed to fetch latest results: {str(e)}"}
+
+@app.get("/f1/standings")
+def get_standings():
+    """
+    Get current F1 driver standings
+    """
+    try:
+        return f1_service.get_current_standings()
+    except Exception as e:
+        return {"error": f"Failed to fetch standings: {str(e)}"}
+
+@app.get("/f1/pit-wall-data")
+def get_pit_wall_data():
+    """
+    Get combined data for the Pit Wall screen
+    """
+    try:
+        # Get all the data needed for Pit Wall in one request
+        schedule = f1_service.get_2025_schedule()
+        next_race = f1_service.get_next_race()
+        latest_results = f1_service.get_latest_race_results()
+        
+        return {
+            "schedule": schedule,
+            "next_race": next_race,
+            "latest_results": latest_results,
+            "timestamp": "2025-06-26T12:00:00Z"  # Current timestamp
+        }
+    except Exception as e:
+        return {"error": f"Failed to fetch pit wall data: {str(e)}"}
 
 # To run this API locally:
 # 1. Make sure you are in the 'paddock-ai-backend' directory.
