@@ -9,6 +9,7 @@ import {
   Dimensions,
   Alert,
   Linking,
+  Image,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,17 +22,44 @@ import {
   type Story 
 } from '../../services/storiesService';
 import { useAuth } from '../../contexts/AuthContext';
-import StoryCarousel from '../../components/pit-wall/StoryCarousel';
+import PitWallTabs from '../../components/pit-wall/PitWallTabs';
 import f1DataService, { type PitWallData } from '../../services/f1DataService';
 
 const { width: screenWidth } = Dimensions.get('window');
 
-// Types for different card content
-interface PitWallItem {
-  id: string;
-  type: 'story_carousel' | 'next_race' | 'latest_results' | 'ai_insight';
-  data: any;
-}
+// Helper functions for driver/team display
+const getCountryFlag = (driverName: string): string => {
+  const flagMap: { [key: string]: string } = {
+    'Max Verstappen': '🇳🇱', 'Lando Norris': '🇬🇧', 'Charles Leclerc': '🇲🇨',
+    'Oscar Piastri': '🇦🇺', 'George Russell': '🇬🇧', 'Lewis Hamilton': '🇬🇧',
+    'Carlos Sainz': '🇪🇸', 'Fernando Alonso': '🇪🇸', 'Sergio Perez': '🇲🇽',
+    'Yuki Tsunoda': '🇯🇵', 'Lance Stroll': '🇨🇦', 'Nico Hulkenberg': '🇩🇪',
+    'Pierre Gasly': '🇫🇷', 'Esteban Ocon': '🇫🇷', 'Alexander Albon': '🇹🇭',
+    'Logan Sargeant': '🇺🇸', 'Kevin Magnussen': '🇩🇰', 'Valtteri Bottas': '🇫🇮',
+    'Kimi Antonelli': '🇮🇹', 'Franco Colapinto': '🇦🇷', 'Oliver Bearman': '🇬🇧',
+    'Gabriel Bortoleto': '🇧🇷', 'Isack Hadjar': '🇫🇷', 'Liam Lawson': '🇳🇿'
+  };
+  return flagMap[driverName] || '🏁';
+};
+
+
+
+const getTeamLogo = (teamName: string): { source: any; fallbackEmoji: string } => {
+  const teamLogos: { [key: string]: { source: any; fallbackEmoji: string } } = {
+    'Red Bull Racing': { source: require('../../assets/team-logos/red-bull.png'), fallbackEmoji: '🟦' },
+    'McLaren': { source: require('../../assets/team-logos/mclaren.png'), fallbackEmoji: '🟠' },
+    'Ferrari': { source: require('../../assets/team-logos/ferrari.png'), fallbackEmoji: '🔴' },
+    'Mercedes': { source: require('../../assets/team-logos/mercedes.png'), fallbackEmoji: '⚪' },
+    'Aston Martin': { source: require('../../assets/team-logos/aston-martin.png'), fallbackEmoji: '🟢' },
+    'Williams': { source: require('../../assets/team-logos/williams.png'), fallbackEmoji: '🔵' },
+    'Alpine': { source: require('../../assets/team-logos/alpine.png'), fallbackEmoji: '🩷' },
+    'Haas F1 Team': { source: require('../../assets/team-logos/haas.png'), fallbackEmoji: '⚪' },
+  };
+  
+  return teamLogos[teamName] || { source: null, fallbackEmoji: '⚫' };
+};
+
+// Note: PitWallItem type moved to individual tab components
 
 // Skeleton loading components
 const SkeletonCard = ({ height = 120 }: { height?: number }) => (
@@ -82,7 +110,7 @@ export default function PitWallScreen() {
   
   const [friendsWithStories, setFriendsWithStories] = useState<FriendWithStories[]>([]);
   const [myStories, setMyStories] = useState<Story[]>([]);
-  const [pitWallItems, setPitWallItems] = useState<PitWallItem[]>([]);
+  // Note: pitWallItems state removed - handled by individual tabs
   const [pitWallData, setPitWallData] = useState<PitWallData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -121,39 +149,16 @@ export default function PitWallScreen() {
     }
   }, []);
 
-  // Build pit wall items when data is available
+  // Log championship standings data for debugging
   useEffect(() => {
     if (!storiesLoading && !f1DataLoading && pitWallData) {
-      const items: PitWallItem[] = [
-        // Story carousel always first
-        {
-          id: 'story_carousel',
-          type: 'story_carousel',
-          data: { friendsWithStories, myStories }
-        },
-        // Next race information
-        {
-          id: 'next_race',
-          type: 'next_race',
-          data: pitWallData.next_race
-        },
-        // Latest race results
-        {
-          id: 'latest_results',
-          type: 'latest_results',
-          data: pitWallData.latest_results
-        },
-        // AI insight placeholder
-        {
-          id: 'ai_insight_1',
-          type: 'ai_insight',
-          data: { title: 'Race Analysis', content: 'Strategic insights powered by AI coming soon...' }
-        }
-      ];
-
-      setPitWallItems(items);
+      if (pitWallData.championship_standings) {
+        console.log('🏆 Championship Standings loaded:', pitWallData.championship_standings.drivers.length, 'drivers');
+      } else {
+        console.log('⚠️ No championship standings data available');
+      }
     }
-  }, [storiesLoading, f1DataLoading, pitWallData, friendsWithStories, myStories]);
+  }, [storiesLoading, f1DataLoading, pitWallData]);
 
   // Update overall loading state
   useEffect(() => {
@@ -219,84 +224,7 @@ export default function PitWallScreen() {
     (navigation as any).navigate('Camera');
   };
 
-  // Render different types of pit wall items with skeleton states
-  const renderPitWallItem = ({ item }: { item: PitWallItem }) => {
-    const currentYear = new Date().getFullYear(); // Get current year for F1 website links
-    
-    switch (item.type) {
-      case 'story_carousel':
-        if (storiesLoading) {
-          return <SkeletonStoryCarousel />;
-        }
-        return (
-          <StoryCarousel
-            friendsWithStories={item.data.friendsWithStories}
-            myStories={item.data.myStories}
-            navigation={navigation}
-            user={user}
-          />
-        );
-      
-      case 'next_race':
-        if (f1DataLoading) {
-          return <SkeletonCard height={140} />;
-        }
-        return (
-          <TouchableOpacity 
-            style={styles.raceCard}
-            onPress={() => handleF1WebsiteNavigation(
-              `https://www.formula1.com/en/racing/${currentYear}`, 
-              'the complete race schedule and upcoming events'
-            )}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.cardTitle}>🏁 Next Race</Text>
-            <Text style={styles.raceName}>{item.data.name}</Text>
-            <Text style={styles.raceLocation}>{item.data.location}, {item.data.country}</Text>
-            <Text style={styles.raceTiming}>In {item.data.days_until} days</Text>
-            <Text style={styles.cardLinkHint}>Tap to view full schedule on F1.com</Text>
-          </TouchableOpacity>
-        );
-      
-      case 'latest_results':
-        if (f1DataLoading) {
-          return <SkeletonCard height={140} />;
-        }
-        return (
-          <TouchableOpacity 
-            style={styles.raceCard}
-            onPress={() => handleF1WebsiteNavigation(
-              `https://www.formula1.com/en/racing/${currentYear}`, 
-              'detailed race results and championship standings'
-            )}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.cardTitle}>🏆 Latest Results</Text>
-            {item.data.results ? (
-              <>
-                <Text style={styles.raceName}>{item.data.race}</Text>
-                <Text style={styles.winnerText}>Winner: {item.data.results[0]?.driver}</Text>
-                <Text style={styles.teamText}>{item.data.results[0]?.team}</Text>
-              </>
-            ) : (
-              <Text style={styles.raceLocation}>{item.data.message || 'No results available'}</Text>
-            )}
-            <Text style={styles.cardLinkHint}>Tap to view full results on F1.com</Text>
-          </TouchableOpacity>
-        );
-      
-      case 'ai_insight':
-        return (
-          <View style={styles.placeholderCard}>
-            <Text style={styles.placeholderTitle}>{item.data.title}</Text>
-            <Text style={styles.placeholderContent}>{item.data.content}</Text>
-          </View>
-        );
-      
-      default:
-        return null;
-    }
-  };
+    // Note: Render functions moved to individual tab components
 
   return (
     <View style={styles.container}>
@@ -309,40 +237,16 @@ export default function PitWallScreen() {
         </TouchableOpacity>
       </View>
 
-      <FlatList
-        data={pitWallItems}
-        renderItem={renderPitWallItem}
-        keyExtractor={(item) => item.id}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#FFFFFF"
-          />
-        }
-        ListEmptyComponent={
-          !loading ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>🏎️</Text>
-              <Text style={styles.emptyTitle}>Welcome to the Pit Wall</Text>
-              <Text style={styles.emptyText}>
-                Your strategic command center is loading...
-              </Text>
-            </View>
-          ) : (
-            // Loading skeleton
-            <View>
-              <SkeletonStoryCarousel />
-              <SkeletonCard height={140} />
-              <SkeletonCard height={140} />
-              <View style={styles.placeholderCard}>
-                <View style={[styles.skeletonLine, { width: '40%', height: 18, marginBottom: 8 }]} />
-                <View style={[styles.skeletonLine, { width: '80%', height: 14 }]} />
-              </View>
-            </View>
-          )
-        }
+      <PitWallTabs
+        friendsWithStories={friendsWithStories}
+        myStories={myStories}
+        pitWallData={pitWallData}
+        storiesLoading={storiesLoading}
+        f1DataLoading={f1DataLoading}
+        navigation={navigation}
+        user={user}
+        onRefresh={onRefresh}
+        refreshing={refreshing}
       />
     </View>
   );
@@ -484,5 +388,48 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     backgroundColor: '#2A2A36',
     marginRight: 15,
+  },
+  // Championship standings styles
+  standingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    paddingHorizontal: 8,
+  },
+  standingPosition: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#E10600',
+    width: 30,
+  },
+  standingDriver: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    flex: 1,
+    marginLeft: 12,
+  },
+  standingPoints: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#00FF88',
+  },
+  driverTeamInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  teamColor: {
+    fontSize: 18,
+  },
+  teamLogoContainer: {
+    width: 28,
+    height: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  teamLogo: {
+    width: 24,
+    height: 24,
   },
 }); 
