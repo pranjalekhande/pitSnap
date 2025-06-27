@@ -9,6 +9,7 @@ import {
   Dimensions,
   Alert,
   Linking,
+  Image,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,10 +27,42 @@ import f1DataService, { type PitWallData } from '../../services/f1DataService';
 
 const { width: screenWidth } = Dimensions.get('window');
 
+// Helper functions for driver/team display
+const getCountryFlag = (driverName: string): string => {
+  const flagMap: { [key: string]: string } = {
+    'Max Verstappen': '🇳🇱', 'Lando Norris': '🇬🇧', 'Charles Leclerc': '🇲🇨',
+    'Oscar Piastri': '🇦🇺', 'George Russell': '🇬🇧', 'Lewis Hamilton': '🇬🇧',
+    'Carlos Sainz': '🇪🇸', 'Fernando Alonso': '🇪🇸', 'Sergio Perez': '🇲🇽',
+    'Yuki Tsunoda': '🇯🇵', 'Lance Stroll': '🇨🇦', 'Nico Hulkenberg': '🇩🇪',
+    'Pierre Gasly': '🇫🇷', 'Esteban Ocon': '🇫🇷', 'Alexander Albon': '🇹🇭',
+    'Logan Sargeant': '🇺🇸', 'Kevin Magnussen': '🇩🇰', 'Valtteri Bottas': '🇫🇮',
+    'Kimi Antonelli': '🇮🇹', 'Franco Colapinto': '🇦🇷', 'Oliver Bearman': '🇬🇧',
+    'Gabriel Bortoleto': '🇧🇷', 'Isack Hadjar': '🇫🇷', 'Liam Lawson': '🇳🇿'
+  };
+  return flagMap[driverName] || '🏁';
+};
+
+
+
+const getTeamLogo = (teamName: string): { source: any; fallbackEmoji: string } => {
+  const teamLogos: { [key: string]: { source: any; fallbackEmoji: string } } = {
+    'Red Bull Racing': { source: require('../../assets/team-logos/red-bull.png'), fallbackEmoji: '🟦' },
+    'McLaren': { source: require('../../assets/team-logos/mclaren.png'), fallbackEmoji: '🟠' },
+    'Ferrari': { source: require('../../assets/team-logos/ferrari.png'), fallbackEmoji: '🔴' },
+    'Mercedes': { source: require('../../assets/team-logos/mercedes.png'), fallbackEmoji: '⚪' },
+    'Aston Martin': { source: require('../../assets/team-logos/aston-martin.png'), fallbackEmoji: '🟢' },
+    'Williams': { source: require('../../assets/team-logos/williams.png'), fallbackEmoji: '🔵' },
+    'Alpine': { source: require('../../assets/team-logos/alpine.png'), fallbackEmoji: '🩷' },
+    'Haas F1 Team': { source: require('../../assets/team-logos/haas.png'), fallbackEmoji: '⚪' },
+  };
+  
+  return teamLogos[teamName] || { source: null, fallbackEmoji: '⚫' };
+};
+
 // Types for different card content
 interface PitWallItem {
   id: string;
-  type: 'story_carousel' | 'next_race' | 'latest_results' | 'ai_insight';
+  type: 'story_carousel' | 'next_race' | 'latest_results' | 'championship_standings' | 'ai_insight';
   data: any;
 }
 
@@ -124,6 +157,13 @@ export default function PitWallScreen() {
   // Build pit wall items when data is available
   useEffect(() => {
     if (!storiesLoading && !f1DataLoading && pitWallData) {
+      // Log championship standings data for debugging
+      if (pitWallData.championship_standings) {
+        console.log('🏆 Championship Standings loaded:', pitWallData.championship_standings.drivers.length, 'drivers');
+      } else {
+        console.log('⚠️ No championship standings data available');
+      }
+      
       const items: PitWallItem[] = [
         // Story carousel always first
         {
@@ -143,6 +183,12 @@ export default function PitWallScreen() {
           type: 'latest_results',
           data: pitWallData.latest_results
         },
+        // NEW: Championship standings (if available)
+        ...(pitWallData.championship_standings ? [{
+          id: 'championship_standings',
+          type: 'championship_standings' as const,
+          data: pitWallData.championship_standings
+        }] : []),
         // AI insight placeholder
         {
           id: 'ai_insight_1',
@@ -285,6 +331,66 @@ export default function PitWallScreen() {
           </TouchableOpacity>
         );
       
+      case 'championship_standings':
+        // Check if we have meaningful points data
+        const hasRealPoints = item.data.drivers?.some((driver: any) => driver.points > 0);
+        const driversToShow = item.data.drivers?.slice(0, 5) || [];
+        
+        return (
+          <TouchableOpacity 
+            style={styles.raceCard}
+            onPress={() => handleF1WebsiteNavigation(
+              `https://www.formula1.com/en/racing/${currentYear}/drivers`, 
+              'detailed championship standings and driver statistics'
+            )}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.cardTitle}>🏆 Championship Standings</Text>
+            <Text style={styles.raceName}>
+              {hasRealPoints ? '2025 Drivers\' Championship' : '2025 Driver Lineup'}
+            </Text>
+            
+            {hasRealPoints ? (
+              // Show standings with points
+              driversToShow.map((driver: any, index: number) => (
+                <View key={driver.driver} style={styles.standingRow}>
+                  <Text style={styles.standingPosition}>P{driver.position}</Text>
+                  <Text style={styles.standingDriver}>{driver.driver}</Text>
+                  <Text style={styles.standingPoints}>{driver.points} pts</Text>
+                </View>
+              ))
+            ) : (
+              // Show driver lineup with teams and countries/flags
+              driversToShow.map((driver: any, index: number) => {
+                const teamLogo = getTeamLogo(driver.team);
+                return (
+                  <View key={driver.driver} style={styles.standingRow}>
+                    <Text style={styles.standingPosition}>{getCountryFlag(driver.driver)}</Text>
+                    <View style={styles.driverTeamInfo}>
+                      <Text style={styles.standingDriver}>{driver.driver}</Text>
+                    </View>
+                    <View style={styles.teamLogoContainer}>
+                      {teamLogo.source ? (
+                        <Image 
+                          source={teamLogo.source} 
+                          style={styles.teamLogo}
+                          resizeMode="contain"
+                        />
+                      ) : (
+                        <Text style={styles.teamColor}>{teamLogo.fallbackEmoji}</Text>
+                      )}
+                    </View>
+                  </View>
+                );
+              })
+            )}
+            
+            <Text style={styles.cardLinkHint}>
+              {hasRealPoints ? 'Tap to view full standings on F1.com' : 'Tap to view driver info on F1.com'}
+            </Text>
+          </TouchableOpacity>
+        );
+
       case 'ai_insight':
         return (
           <View style={styles.placeholderCard}>
@@ -484,5 +590,48 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     backgroundColor: '#2A2A36',
     marginRight: 15,
+  },
+  // Championship standings styles
+  standingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    paddingHorizontal: 8,
+  },
+  standingPosition: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#E10600',
+    width: 30,
+  },
+  standingDriver: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    flex: 1,
+    marginLeft: 12,
+  },
+  standingPoints: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#00FF88',
+  },
+  driverTeamInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  teamColor: {
+    fontSize: 18,
+  },
+  teamLogoContainer: {
+    width: 28,
+    height: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  teamLogo: {
+    width: 24,
+    height: 24,
   },
 }); 
