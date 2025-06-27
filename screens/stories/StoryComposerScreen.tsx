@@ -86,8 +86,8 @@ export default function StoryComposerScreen() {
             {
               text: 'OK',
               onPress: () => {
-                // Navigate back to Stories feed
-                navigation.navigate('StoriesFeed' as never);
+                // Navigate back to Pit Wall feed
+                navigation.navigate('PitWallFeed' as never);
               }
             }
           ]

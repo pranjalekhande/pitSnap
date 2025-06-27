@@ -170,9 +170,9 @@ export default function PitWallScreen() {
     (navigation as any).navigate('Camera');
   };
 
-  // Render different types of pit wall items
+  // Render different types of pit wall items  
   const renderPitWallItem = ({ item }: { item: PitWallItem }) => {
-    const currentYear = new Date().getFullYear();
+    const currentYear = new Date().getFullYear(); // Get current year for F1 website links
     
     switch (item.type) {
       case 'story_carousel':

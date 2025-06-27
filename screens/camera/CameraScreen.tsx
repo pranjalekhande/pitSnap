@@ -705,7 +705,7 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
               style={styles.snapchatStoriesButton} 
               onPress={() => {
                 // Navigate to StoryComposer with the captured media
-                (navigation as any).navigate('Stories', {
+                (navigation as any).navigate('Pit Wall', {
                   screen: 'StoryComposer',
                   params: {
                     mediaUri: capturedMedia.uri,
