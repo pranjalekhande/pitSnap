@@ -22,7 +22,7 @@ import {
 } from '../../services/storiesService';
 import { useAuth } from '../../contexts/AuthContext';
 import StoryCarousel from '../../components/pit-wall/StoryCarousel';
-import f1DataService, { type F1NextRace, type F1LatestResults } from '../../services/f1DataService';
+import f1DataService, { type PitWallData } from '../../services/f1DataService';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -32,6 +32,25 @@ interface PitWallItem {
   type: 'story_carousel' | 'next_race' | 'latest_results' | 'ai_insight';
   data: any;
 }
+
+// Skeleton loading components
+const SkeletonCard = ({ height = 120 }: { height?: number }) => (
+  <View style={[styles.raceCard, { height, backgroundColor: '#1A1A24' }]}>
+    <View style={[styles.skeletonLine, { width: '30%', height: 16, marginBottom: 12 }]} />
+    <View style={[styles.skeletonLine, { width: '80%', height: 20, marginBottom: 6 }]} />
+    <View style={[styles.skeletonLine, { width: '60%', height: 16, marginBottom: 4 }]} />
+    <View style={[styles.skeletonLine, { width: '40%', height: 14 }]} />
+  </View>
+);
+
+const SkeletonStoryCarousel = () => (
+  <View style={styles.storyCarouselContainer}>
+    <View style={styles.skeletonStoryCircle} />
+    <View style={styles.skeletonStoryCircle} />
+    <View style={styles.skeletonStoryCircle} />
+    <View style={styles.skeletonStoryCircle} />
+  </View>
+);
 
 export default function PitWallScreen() {
   const navigation = useNavigation();
@@ -60,48 +79,69 @@ export default function PitWallScreen() {
       { cancelable: true }
     );
   };
+  
   const [friendsWithStories, setFriendsWithStories] = useState<FriendWithStories[]>([]);
   const [myStories, setMyStories] = useState<Story[]>([]);
   const [pitWallItems, setPitWallItems] = useState<PitWallItem[]>([]);
-  const [nextRace, setNextRace] = useState<F1NextRace | null>(null);
-  const [latestResults, setLatestResults] = useState<F1LatestResults | null>(null);
+  const [pitWallData, setPitWallData] = useState<PitWallData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [storiesLoading, setStoriesLoading] = useState(true);
+  const [f1DataLoading, setF1DataLoading] = useState(true);
 
-  // Load stories and pit wall data
-  const loadPitWallData = useCallback(async () => {
+  // OPTIMIZED: Load stories and F1 data separately for better UX
+  const loadStoriesData = useCallback(async () => {
     try {
-      const [friendsData, myStoriesData, nextRaceData, latestResultsData] = await Promise.all([
+      setStoriesLoading(true);
+      const [friendsData, myStoriesData] = await Promise.all([
         getFriendsStories(),
         getMyStories(),
-        f1DataService.getNextRace(),
-        f1DataService.getLatestResults(),
       ]);
 
       setFriendsWithStories(friendsData);
       setMyStories(myStoriesData);
-      setNextRace(nextRaceData);
-      setLatestResults(latestResultsData);
+    } catch (error) {
+      console.error('Error loading stories data:', error);
+    } finally {
+      setStoriesLoading(false);
+    }
+  }, []);
 
-      // Build pit wall items array
+  // OPTIMIZED: Single batch API call for all F1 data
+  const loadF1Data = useCallback(async () => {
+    try {
+      setF1DataLoading(true);
+      const data = await f1DataService.getPitWallData(); // Uses caching internally
+      setPitWallData(data);
+    } catch (error) {
+      console.error('Error loading F1 data:', error);
+      Alert.alert('Error', 'Failed to load F1 data. Please try again.');
+    } finally {
+      setF1DataLoading(false);
+    }
+  }, []);
+
+  // Build pit wall items when data is available
+  useEffect(() => {
+    if (!storiesLoading && !f1DataLoading && pitWallData) {
       const items: PitWallItem[] = [
         // Story carousel always first
         {
           id: 'story_carousel',
           type: 'story_carousel',
-          data: { friendsWithStories: friendsData, myStories: myStoriesData }
+          data: { friendsWithStories, myStories }
         },
         // Next race information
         {
           id: 'next_race',
           type: 'next_race',
-          data: nextRaceData
+          data: pitWallData.next_race
         },
         // Latest race results
         {
           id: 'latest_results',
           type: 'latest_results',
-          data: latestResultsData
+          data: pitWallData.latest_results
         },
         // AI insight placeholder
         {
@@ -112,20 +152,20 @@ export default function PitWallScreen() {
       ];
 
       setPitWallItems(items);
-    } catch (error) {
-      console.error('Error loading pit wall data:', error);
-      Alert.alert('Error', 'Failed to load pit wall. Please try again.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
     }
-  }, []);
+  }, [storiesLoading, f1DataLoading, pitWallData, friendsWithStories, myStories]);
 
-  // Load data when screen comes into focus
+  // Update overall loading state
+  useEffect(() => {
+    setLoading(storiesLoading || f1DataLoading);
+  }, [storiesLoading, f1DataLoading]);
+
+  // OPTIMIZED: Load data when screen comes into focus (cached calls are fast)
   useFocusEffect(
     useCallback(() => {
-      loadPitWallData();
-    }, [loadPitWallData])
+      loadStoriesData();
+      loadF1Data();
+    }, [loadStoriesData, loadF1Data])
   );
 
   // Set up real-time subscription for stories
@@ -137,7 +177,7 @@ export default function PitWallScreen() {
       try {
         subscription = subscribeToStories((newStory) => {
           if (isMounted) {
-            loadPitWallData();
+            loadStoriesData(); // Only reload stories, not F1 data
           }
         });
       } catch (error) {
@@ -157,25 +197,37 @@ export default function PitWallScreen() {
         }
       }
     };
-  }, []);
+  }, [loadStoriesData]);
 
-  // Handle refresh
-  const onRefresh = useCallback(() => {
+  // OPTIMIZED: Handle refresh with force refresh for F1 data
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    loadPitWallData();
-  }, [loadPitWallData]);
+    try {
+      // Force refresh F1 data (bypasses cache)
+      await f1DataService.forceRefresh();
+      await Promise.all([
+        loadStoriesData(),
+        loadF1Data(),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadStoriesData, loadF1Data]);
 
   // Navigate to camera to add story
   const handleAddStory = () => {
     (navigation as any).navigate('Camera');
   };
 
-  // Render different types of pit wall items  
+  // Render different types of pit wall items with skeleton states
   const renderPitWallItem = ({ item }: { item: PitWallItem }) => {
     const currentYear = new Date().getFullYear(); // Get current year for F1 website links
     
     switch (item.type) {
       case 'story_carousel':
+        if (storiesLoading) {
+          return <SkeletonStoryCarousel />;
+        }
         return (
           <StoryCarousel
             friendsWithStories={item.data.friendsWithStories}
@@ -186,6 +238,9 @@ export default function PitWallScreen() {
         );
       
       case 'next_race':
+        if (f1DataLoading) {
+          return <SkeletonCard height={140} />;
+        }
         return (
           <TouchableOpacity 
             style={styles.raceCard}
@@ -204,6 +259,9 @@ export default function PitWallScreen() {
         );
       
       case 'latest_results':
+        if (f1DataLoading) {
+          return <SkeletonCard height={140} />;
+        }
         return (
           <TouchableOpacity 
             style={styles.raceCard}
@@ -272,15 +330,20 @@ export default function PitWallScreen() {
                 Your strategic command center is loading...
               </Text>
             </View>
-          ) : null
+          ) : (
+            // Loading skeleton
+            <View>
+              <SkeletonStoryCarousel />
+              <SkeletonCard height={140} />
+              <SkeletonCard height={140} />
+              <View style={styles.placeholderCard}>
+                <View style={[styles.skeletonLine, { width: '40%', height: 18, marginBottom: 8 }]} />
+                <View style={[styles.skeletonLine, { width: '80%', height: 14 }]} />
+              </View>
+            </View>
+          )
         }
       />
-
-      {loading && (
-        <View style={styles.loadingState}>
-          <Text style={styles.loadingText}>Loading pit wall...</Text>
-        </View>
-      )}
     </View>
   );
 }
@@ -401,16 +464,25 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
   },
-  loadingState: {
-    position: 'absolute',
-    top: '50%',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
+  // Skeleton loading styles
+  skeletonLine: {
+    backgroundColor: '#2A2A36',
+    borderRadius: 4,
   },
-  loadingText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    opacity: 0.7,
+  storyCarouselContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    backgroundColor: '#1E1E28',
+    marginHorizontal: 20,
+    marginVertical: 10,
+    borderRadius: 12,
+  },
+  skeletonStoryCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#2A2A36',
+    marginRight: 15,
   },
 }); 

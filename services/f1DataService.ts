@@ -1,8 +1,16 @@
 // F1 Data Service for PitSnap React Native App
 // Connects to the Paddock AI backend to fetch F1 data
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_URL = "http://10.0.0.210:8000";  // For physical phone on local network
 // const API_URL = "http://127.0.0.1:8000";  // For simulator only
+
+// Cache configuration
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
+const CACHE_PREFIX = 'f1_data_cache_';
+
+// Request deduplication map
+const ongoingRequests = new Map<string, Promise<any>>();
 
 export interface F1Event {
   round: number;
@@ -52,148 +60,197 @@ export interface PitWallData {
   timestamp: string;
 }
 
+interface CacheItem<T> {
+  data: T;
+  timestamp: number;
+  ttl: number;
+}
+
 /**
- * Service for fetching F1 data from the Paddock AI backend
+ * Service for fetching F1 data from the Paddock AI backend with caching
  */
 class F1DataService {
   
   /**
+   * Cache management utilities
+   */
+  private async setCache<T>(key: string, data: T, ttl: number = CACHE_TTL): Promise<void> {
+    try {
+      const cacheItem: CacheItem<T> = {
+        data,
+        timestamp: Date.now(),
+        ttl
+      };
+      await AsyncStorage.setItem(CACHE_PREFIX + key, JSON.stringify(cacheItem));
+    } catch (error) {
+      console.warn('Failed to cache data:', error);
+    }
+  }
+
+  private async getCache<T>(key: string): Promise<T | null> {
+    try {
+      const cached = await AsyncStorage.getItem(CACHE_PREFIX + key);
+      if (!cached) return null;
+
+      const cacheItem: CacheItem<T> = JSON.parse(cached);
+      const now = Date.now();
+      
+      // Check if cache is still valid
+      if (now - cacheItem.timestamp > cacheItem.ttl) {
+        // Cache expired, remove it
+        await AsyncStorage.removeItem(CACHE_PREFIX + key);
+        return null;
+      }
+
+      return cacheItem.data;
+    } catch (error) {
+      console.warn('Failed to read cache:', error);
+      return null;
+    }
+  }
+
+  private async clearCache(): Promise<void> {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const cacheKeys = keys.filter(key => key.startsWith(CACHE_PREFIX));
+      await AsyncStorage.multiRemove(cacheKeys);
+    } catch (error) {
+      console.warn('Failed to clear cache:', error);
+    }
+  }
+
+  /**
+   * Generic API request with caching and deduplication
+   */
+  private async fetchWithCache<T>(
+    endpoint: string, 
+    cacheKey: string, 
+    ttl: number = CACHE_TTL
+  ): Promise<T> {
+    // Check cache first
+    const cached = await this.getCache<T>(cacheKey);
+    if (cached) {
+      console.log(`🟢 Cache hit for ${endpoint}`);
+      return cached;
+    }
+
+    // Check if request is already in progress (deduplication)
+    if (ongoingRequests.has(cacheKey)) {
+      console.log(`🟡 Deduplicating request for ${endpoint}`);
+      return ongoingRequests.get(cacheKey);
+    }
+
+    // Make the request
+    const requestPromise = this.makeRequest<T>(endpoint);
+    ongoingRequests.set(cacheKey, requestPromise);
+
+    try {
+      const data = await requestPromise;
+      
+      // Cache the result
+      await this.setCache(cacheKey, data, ttl);
+      console.log(`🔵 Cached result for ${endpoint}`);
+      
+      return data;
+    } finally {
+      // Clean up ongoing request
+      ongoingRequests.delete(cacheKey);
+    }
+  }
+
+  private async makeRequest<T>(endpoint: string): Promise<T> {
+    console.log(`🔴 API request to ${endpoint}`);
+    
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  /**
    * Get the 2025 F1 race schedule
    */
   async getSchedule(): Promise<F1Schedule> {
-    console.log("Fetching F1 schedule...");
-    
-    try {
-      const response = await fetch(`${API_URL}/f1/schedule`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Schedule API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log("F1 schedule fetched successfully");
-      return data;
-
-    } catch (error) {
-      console.error("Error fetching F1 schedule:", error);
-      throw new Error("Failed to fetch F1 schedule");
-    }
+    return this.fetchWithCache<F1Schedule>('/f1/schedule', 'schedule', 30 * 60 * 1000); // 30 min cache
   }
 
   /**
    * Get information about the next upcoming race
    */
   async getNextRace(): Promise<F1NextRace> {
-    console.log("Fetching next F1 race...");
-    
-    try {
-      const response = await fetch(`${API_URL}/f1/next-race`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Next race API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log("Next F1 race fetched successfully:", data.name);
-      return data;
-
-    } catch (error) {
-      console.error("Error fetching next F1 race:", error);
-      throw new Error("Failed to fetch next F1 race");
-    }
+    return this.fetchWithCache<F1NextRace>('/f1/next-race', 'next_race', 60 * 60 * 1000); // 1 hour cache
   }
 
   /**
    * Get results from the most recent completed race
    */
   async getLatestResults(): Promise<F1LatestResults> {
-    console.log("Fetching latest F1 results...");
-    
-    try {
-      const response = await fetch(`${API_URL}/f1/latest-results`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Latest results API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log("Latest F1 results fetched successfully");
-      return data;
-
-    } catch (error) {
-      console.error("Error fetching latest F1 results:", error);
-      throw new Error("Failed to fetch latest F1 results");
-    }
+    return this.fetchWithCache<F1LatestResults>('/f1/latest-results', 'latest_results', 15 * 60 * 1000); // 15 min cache
   }
 
   /**
    * Get current F1 driver standings
    */
   async getStandings(): Promise<F1LatestResults> {
-    console.log("Fetching F1 standings...");
-    
-    try {
-      const response = await fetch(`${API_URL}/f1/standings`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Standings API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log("F1 standings fetched successfully");
-      return data;
-
-    } catch (error) {
-      console.error("Error fetching F1 standings:", error);
-      throw new Error("Failed to fetch F1 standings");
-    }
+    return this.fetchWithCache<F1LatestResults>('/f1/standings', 'standings', 30 * 60 * 1000); // 30 min cache
   }
 
   /**
-   * Get all data needed for Pit Wall (fallback to individual calls)
+   * Get all data needed for Pit Wall (OPTIMIZED BATCH REQUEST)
    */
   async getPitWallData(): Promise<PitWallData> {
-    console.log("Fetching Pit Wall data...");
+    console.log("🏎️ Fetching Pit Wall data (batch optimized)...");
     
     try {
-      // Make individual calls since combined endpoint has issues
+      // Use Promise.all for parallel requests with caching
       const [schedule, nextRace, latestResults] = await Promise.all([
         this.getSchedule(),
         this.getNextRace(),
         this.getLatestResults(),
       ]);
 
-      return {
+      const pitWallData: PitWallData = {
         schedule,
         next_race: nextRace,
         latest_results: latestResults,
         timestamp: new Date().toISOString(),
       };
 
+      // Cache the complete pit wall data for quick subsequent loads
+      await this.setCache('pit_wall_complete', pitWallData, 10 * 60 * 1000); // 10 min cache
+
+      console.log("✅ Pit Wall data fetched and cached successfully");
+      return pitWallData;
+
     } catch (error) {
-      console.error("Error fetching pit wall data:", error);
+      console.error("❌ Error fetching pit wall data:", error);
+      
+      // Try to return cached complete data as fallback
+      const cachedComplete = await this.getCache<PitWallData>('pit_wall_complete');
+      if (cachedComplete) {
+        console.log("🟡 Returning cached complete pit wall data as fallback");
+        return cachedComplete;
+      }
+      
       throw new Error("Failed to fetch pit wall data");
     }
+  }
+
+  /**
+   * Force refresh data (bypasses cache)
+   */
+  async forceRefresh(): Promise<void> {
+    console.log("🔄 Force refreshing F1 data...");
+    await this.clearCache();
+    ongoingRequests.clear();
   }
 
   /**
@@ -208,6 +265,22 @@ class F1DataService {
     } catch (error) {
       console.error("❌ F1 Data Service connection test failed:", error);
       return false;
+    }
+  }
+
+  /**
+   * Get cache statistics (for debugging)
+   */
+  async getCacheStats(): Promise<{ totalCacheItems: number; cacheKeys: string[] }> {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const cacheKeys = keys.filter(key => key.startsWith(CACHE_PREFIX));
+      return {
+        totalCacheItems: cacheKeys.length,
+        cacheKeys: cacheKeys.map(key => key.replace(CACHE_PREFIX, ''))
+      };
+    } catch (error) {
+      return { totalCacheItems: 0, cacheKeys: [] };
     }
   }
 }
