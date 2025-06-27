@@ -153,9 +153,9 @@ export default function PitWallScreen() {
   useEffect(() => {
     if (!storiesLoading && !f1DataLoading && pitWallData) {
       if (pitWallData.championship_standings) {
-        console.log('🏆 Championship Standings loaded:', pitWallData.championship_standings.drivers.length, 'drivers');
+        // Championship standings loaded
       } else {
-        console.log('⚠️ No championship standings data available');
+                  // No championship standings data available
       }
     }
   }, [storiesLoading, f1DataLoading, pitWallData]);

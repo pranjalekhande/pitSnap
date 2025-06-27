@@ -159,13 +159,13 @@ class F1DataService {
     // Check cache first
     const cached = await this.getCache<T>(cacheKey);
     if (cached) {
-      console.log(`🟢 Cache hit for ${endpoint}`);
+      // Cache hit
       return cached;
     }
 
     // Check if request is already in progress (deduplication)
     if (ongoingRequests.has(cacheKey)) {
-      console.log(`🟡 Deduplicating request for ${endpoint}`);
+      // Deduplicating request
       return ongoingRequests.get(cacheKey);
     }
 
@@ -178,7 +178,7 @@ class F1DataService {
       
       // Cache the result
       await this.setCache(cacheKey, data, ttl);
-      console.log(`🔵 Cached result for ${endpoint}`);
+      // Cached result
       
       return data;
     } finally {
@@ -188,7 +188,7 @@ class F1DataService {
   }
 
   private async makeRequest<T>(endpoint: string): Promise<T> {
-    console.log(`🔴 API request to ${endpoint}`);
+    // API request
     
     const response = await fetch(`${API_URL}${endpoint}`, {
       method: 'GET',
@@ -269,7 +269,7 @@ class F1DataService {
       
       // If no valid data, provide fallback mock data for development
       if (drivers.length === 0) {
-        console.log('🟡 Using fallback championship standings data');
+        // Using fallback data
         return {
           drivers: [
             { position: 1, driver: 'Max Verstappen', team: 'Red Bull Racing', points: 250, wins: 3, podiums: 8 },
@@ -300,7 +300,7 @@ class F1DataService {
       // Fallback to cached data or mock data
       const cached = await this.getCache<F1ChampionshipStandings>('championship_standings');
       if (cached) {
-        console.log('🟡 Returning cached championship standings as fallback');
+        // Returning cached fallback
         return cached;
       }
       
@@ -312,7 +312,7 @@ class F1DataService {
    * Get all data needed for Pit Wall (ENHANCED VERSION - doesn't break existing usage)
    */
   async getPitWallData(): Promise<PitWallData> {
-    console.log("🏎️ Fetching Pit Wall data (batch optimized)...");
+    // Fetching pit wall data
     
     try {
       // Use Promise.all for parallel requests with caching (EXISTING LOGIC UNCHANGED)
@@ -327,7 +327,7 @@ class F1DataService {
       try {
         championshipStandings = await this.getChampionshipStandings();
       } catch (error) {
-        console.warn('⚠️ Could not fetch championship standings, continuing without it:', error);
+        // Could not fetch championship standings
         championshipStandings = undefined;
       }
 
@@ -343,7 +343,7 @@ class F1DataService {
       // Cache the complete pit wall data for quick subsequent loads
       await this.setCache('pit_wall_complete', pitWallData, 10 * 60 * 1000); // 10 min cache
 
-      console.log("✅ Pit Wall data fetched and cached successfully");
+      // Data fetched successfully
       return pitWallData;
 
     } catch (error) {
@@ -352,7 +352,7 @@ class F1DataService {
       // Try to return cached complete data as fallback
       const cachedComplete = await this.getCache<PitWallData>('pit_wall_complete');
       if (cachedComplete) {
-        console.log("🟡 Returning cached complete pit wall data as fallback");
+        // Returning cached fallback
         return cachedComplete;
       }
       
@@ -364,7 +364,7 @@ class F1DataService {
    * Force refresh data (bypasses cache)
    */
   async forceRefresh(): Promise<void> {
-    console.log("🔄 Force refreshing F1 data...");
+    // Force refreshing data
     await this.clearCache();
     ongoingRequests.clear();
   }
@@ -375,8 +375,7 @@ class F1DataService {
   async testConnection(): Promise<boolean> {
     try {
       const nextRace = await this.getNextRace();
-      console.log("✅ F1 Data Service connection test successful");
-      console.log(`   Next race: ${nextRace.name} in ${nextRace.days_until} days`);
+      // Connection test successful
       return true;
     } catch (error) {
       console.error("❌ F1 Data Service connection test failed:", error);

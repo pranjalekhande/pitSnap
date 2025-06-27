@@ -83,7 +83,7 @@ export default function ChatScreen({ onChatPress }: ChatScreenProps) {
       // Test loading conversations (existing functionality)
       console.log('1. Testing getConversations...');
       const convos = await getConversations();
-      console.log('✅ Individual conversations loaded:', convos.length, 'conversations');
+              // Individual conversations loaded
       
       Alert.alert(
         'Individual Chat Test Success! ✅', 

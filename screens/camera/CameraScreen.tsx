@@ -202,7 +202,7 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
     try {
       setIsProcessing(true);
       
-      console.log('📸 Taking photo...');
+      // Taking photo
       
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.9,

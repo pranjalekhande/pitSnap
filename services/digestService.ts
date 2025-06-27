@@ -3,7 +3,7 @@ import { OPENAI_API_KEY } from '@env';
 
 // Check if API key is loaded (keep minimal check for debugging)
 if (!OPENAI_API_KEY) {
-  console.log('⚠️ OpenAI API Key not found in environment');
+      // OpenAI API Key not found
 }
 
 export interface DailyDigest {
