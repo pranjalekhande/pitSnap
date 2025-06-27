@@ -24,14 +24,14 @@ export const addHelmetToPhoto = async (
   try {
     // If no helmet selected, return original photo
     if (selectedHelmet.id === 'none') {
-      console.log('🪖 No helmet selected, returning original photo');
+      // No helmet selected
       return {
         success: true,
         uri: photoUri,
       };
     }
 
-    console.log(`🪖 Processing photo with ${selectedHelmet.name} helmet...`);
+    // Processing photo with helmet
 
     // Get original image dimensions
     const imageInfo = await ImageManipulator.manipulateAsync(
@@ -40,13 +40,11 @@ export const addHelmetToPhoto = async (
       { format: ImageManipulator.SaveFormat.JPEG }
     );
 
-    console.log(`📸 Image dimensions: ${imageInfo.width}x${imageInfo.height}`);
-    console.log(`📱 Screen dimensions: ${screenDimensions.width}x${screenDimensions.height}`);
+    // Image and screen dimensions calculated
 
     // For emoji overlays, we need to use the PhotoComposer component
     // This would be called from the camera screen where we can render React components
-    console.log(`🪖 Helmet overlay will be applied using PhotoComposer component`);
-    console.log(`🪖 Emoji: ${selectedHelmet.emoji}, Team: ${selectedHelmet.name}`);
+    // Helmet overlay will be applied using PhotoComposer component
     
     // For now, return success and let the camera screen handle the compositing
     return {
@@ -77,11 +75,11 @@ export const composePhotoWithEmoji = async (
       throw new Error('PhotoComposer ref not available');
     }
 
-    console.log('🎨 Capturing composite photo with emoji overlay...');
+          // Capturing composite photo
     
     const compositeUri = await photoComposerRef.current.capturePhoto();
     
-    console.log('✅ Photo with emoji overlay captured successfully!');
+          // Photo captured successfully
     
     return {
       success: true,
@@ -208,7 +206,7 @@ export const addHelmetToPhotoCanvas = async (
   try {
     // This would use a Canvas-based approach for drawing
     // More complex but potentially more reliable than SVG
-    console.log('🎨 Using Canvas-based helmet compositing...');
+          // Using Canvas-based compositing
     
     // For now, apply a simple color overlay to show the effect
     const result = await ImageManipulator.manipulateAsync(

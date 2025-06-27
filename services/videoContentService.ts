@@ -101,29 +101,53 @@ class VideoContentService {
         videoUrl: `https://youtube.com/watch?v=${video.id}`,
         isYouTube: true,
         uploadDate: 'Recently',
-        views: 'Official F1',
+        views: video.channelTitle || 'F1 Content',
         tags: ['race', 'highlights', 'official'],
         relatedTo: raceName
       }));
     } catch (error) {
       console.error('Error fetching race highlights:', error);
-      // Fallback to single mock entry
-      return [
-        {
-          id: 'YQHsXMglC9A',
-          title: `${raceName} Race Highlights`,
-          description: 'Official F1 race highlights',
-          thumbnail: '🏁',
-          duration: '4:23',
-          category: 'highlights',
-          videoUrl: 'https://youtube.com/watch?v=YQHsXMglC9A',
+      
+      // Use enhanced fallback system
+      try {
+        const youtubeService = await import('./youtubeSearchService');
+        const fallbackVideos = await youtubeService.default.getTestedVideos('highlights');
+        
+        return fallbackVideos.map(video => ({
+          id: video.id,
+          title: video.title,
+          description: video.description,
+          thumbnail: video.thumbnail || '🏁',
+          duration: video.duration,
+          category: 'highlights' as const,
+          videoUrl: `https://youtube.com/watch?v=${video.id}`,
           isYouTube: true,
           uploadDate: 'Recently',
-          views: 'F1 Official',
+          views: video.channelTitle,
           tags: ['race', 'highlights'],
           relatedTo: raceName
-        }
-      ];
+        }));
+      } catch (fallbackError) {
+        console.error('Fallback videos also failed:', fallbackError);
+        
+        // Last resort: return minimal safe content
+        return [
+          {
+            id: 'Y2J11XHAQiU',
+            title: `${raceName} Race Highlights`,
+            description: 'F1 race content and analysis',
+            thumbnail: '🏁',
+            duration: '5:00',
+            category: 'highlights',
+            videoUrl: 'https://youtube.com/watch?v=Y2J11XHAQiU',
+            isYouTube: true,
+            uploadDate: 'Recently',
+            views: 'F1 Channel',
+            tags: ['race', 'highlights'],
+            relatedTo: raceName
+          }
+        ];
+      }
     }
   }
 

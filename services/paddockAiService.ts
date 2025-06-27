@@ -17,8 +17,7 @@ interface Message {
  * @returns The AI's answer as a string.
  */
 export async function askPaddock(question: string, chatHistory: Message[]): Promise<string> {
-  console.log("Sending question to Paddock AI:", question);
-  console.log("With history:", chatHistory);
+      // Sending question to Paddock AI
 
   try {
     const response = await fetch(`${API_URL}/ask`, {
@@ -39,7 +38,7 @@ export async function askPaddock(question: string, chatHistory: Message[]): Prom
     }
 
     const data = await response.json();
-    console.log("Received answer from Paddock AI:", data.answer);
+          // Received answer from Paddock AI
     return data.answer;
 
   } catch (error) {
@@ -49,9 +48,9 @@ export async function askPaddock(question: string, chatHistory: Message[]): Prom
     if (error instanceof TypeError && error.message.includes('Network request failed')) {
       return "🔌 Connection failed. Make sure the Paddock AI backend is running on your local network.";
     } else if (error instanceof Error && error.message.includes('timeout')) {
-      return "⏱️ Request timed out. The AI is thinking hard about your strategic question - please try again.";
+      return "Request timed out. The AI is thinking hard about your strategic question - please try again.";
     } else {
-      return "🤖 Sorry, I'm having trouble with the strategic analysis right now. Please try again in a moment.";
+      return "Sorry, I'm having trouble with the strategic analysis right now. Please try again in a moment.";
     }
   }
 } 
