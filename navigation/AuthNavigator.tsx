@@ -29,6 +29,7 @@ export default function AuthNavigator() {
     <>
       {isLoginMode ? (
         <LoginScreen
+          key="login" // Force remount when switching screens
           onLoginSuccess={() => {
             // Navigation will automatically update via useAuth
           }}
@@ -36,6 +37,7 @@ export default function AuthNavigator() {
         />
       ) : (
         <SignupScreen
+          key="signup" // Force remount when switching screens
           onSignupSuccess={() => setIsLoginMode(true)}
           onLoginPress={() => setIsLoginMode(true)}
         />
