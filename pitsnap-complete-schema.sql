@@ -358,9 +358,9 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 DO $$
 BEGIN
-    RAISE NOTICE '🏁 PitSnap Database Schema Created Successfully! ✅';
+    RAISE NOTICE '🏁 PitSnap Database Schema Created Successfully!';
     RAISE NOTICE 'Tables: users, friends, groups, group_members, messages, stories, story_views';
-    RAISE NOTICE 'Features: Individual chat ✅ Group chat ✅ Stories ✅ Friends ✅';
-    RAISE NOTICE 'Security: RLS policies configured without recursion ✅';
-    RAISE NOTICE 'Performance: All indexes created ✅';
+    RAISE NOTICE 'Features: Individual chat, Group chat, Stories, Friends';
+    RAISE NOTICE 'Security: RLS policies configured without recursion';
+    RAISE NOTICE 'Performance: All indexes created';
 END $$; 

@@ -274,6 +274,39 @@ def get_f1_schedule():
     except Exception as e:
         return {"error": f"Failed to fetch F1 schedule: {str(e)}"}
 
+@app.get("/f1/schedule-with-timing")
+def get_schedule_with_timing():
+    """
+    Get enhanced F1 schedule with precise timing, live session detection, and cache TTL recommendations
+    """
+    try:
+        return {
+            "schedule": f1_service.get_schedule_with_timing(),
+            "timestamp": f1_service._get_current_utc_time().isoformat()
+        }
+    except Exception as e:
+        return {"error": f"Failed to fetch schedule with timing: {str(e)}"}
+
+@app.get("/f1/current-race-info")
+def get_current_race_info():
+    """
+    Get current race information with live session detection
+    """
+    try:
+        return f1_service.get_current_race_info()
+    except Exception as e:
+        return {"error": f"Failed to fetch current race info: {str(e)}"}
+
+@app.get("/f1/next-race-info")
+def get_next_race_info():
+    """
+    Get next race information with precise countdown and session timing
+    """
+    try:
+        return f1_service.get_next_race_info()
+    except Exception as e:
+        return {"error": f"Failed to fetch next race info: {str(e)}"}
+
 @app.get("/f1/next-race")
 def get_next_race():
     """
@@ -307,22 +340,96 @@ def get_standings():
 @app.get("/f1/pit-wall-data")
 def get_pit_wall_data():
     """
-    Get combined data for the Pit Wall screen
+    Get combined data for the Pit Wall screen with enhanced timing
     """
     try:
         # Get all the data needed for Pit Wall in one request
-        schedule = f1_service.get_2025_schedule()
-        next_race = f1_service.get_next_race()
+        schedule = f1_service.get_schedule_with_timing()
+        next_race = f1_service.get_next_race_info()
+        current_race = f1_service.get_current_race_info()
         latest_results = f1_service.get_latest_race_results()
         
         return {
             "schedule": schedule,
             "next_race": next_race,
+            "current_race": current_race,
             "latest_results": latest_results,
-            "timestamp": "2025-06-26T12:00:00Z"  # Current timestamp
+            "timestamp": f1_service._get_current_utc_time().isoformat()
         }
     except Exception as e:
         return {"error": f"Failed to fetch pit wall data: {str(e)}"}
+
+@app.get("/f1/basic-data")
+def get_basic_f1_data():
+    """
+    Get basic F1 data for instant UI responses (optimized for performance)
+    """
+    try:
+        return f1_service.get_basic_f1_data()
+    except Exception as e:
+        return {"error": f"Failed to fetch basic F1 data: {str(e)}"}
+
+@app.post("/ask-standings", response_model=AnswerResponse)
+def ask_standings_quick(request: QuestionRequest):
+    """
+    Fast endpoint for F1 standings and rankings using direct OpenAI web search.
+    Bypasses RAG pipeline for speed on current data queries.
+    """
+    print(f"Received standings query: {request.question}")
+    
+    try:
+        # Direct OpenAI call with web search for current standings
+        response = fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {os.getenv("OPENAI_API_KEY")}',
+            },
+            json: {
+                'model': 'gpt-4',
+                'messages': [
+                    {
+                        'role': 'system',
+                        'content': '''You are an F1 expert providing current championship standings and driver rankings. 
+
+IMPORTANT: Search the web for the most current 2025 F1 data. Focus on:
+- Current championship standings (driver positions and points)
+- Latest race winners and results
+- Driver rankings and team positions
+
+Provide concise, accurate information in this format:
+• **Championship Leader**: [Driver] ([Team]) - [Points] points
+• **Top 3**: List the top 3 drivers with teams and points
+• **Latest Winner**: [Driver] won [Race Name]
+
+Keep response under 100 words and always mention this is current 2025 data.'''
+                    },
+                    {
+                        'role': 'user',
+                        'content': f'Current F1 standings and rankings: {request.question}'
+                    }
+                ],
+                'max_tokens': 200,
+                'temperature': 0.1,  # Low temperature for factual accuracy
+            }
+        })
+        
+        if response.status_code == 200:
+            data = response.json()
+            answer = data['choices'][0]['message']['content']
+            print(f"Generated quick standings answer: {answer}")
+            return {"answer": answer}
+        else:
+            print(f"OpenAI API error: {response.status_code}")
+            # Fallback to existing RAG system
+            result = agent_executor.invoke({"input": request.question})
+            return {"answer": result['output']}
+            
+    except Exception as e:
+        print(f"Error in quick standings endpoint: {e}")
+        # Fallback to existing RAG system
+        result = agent_executor.invoke({"input": request.question})
+        return {"answer": result['output']}
 
 # To run this API locally:
 # 1. Make sure you are in the 'paddock-ai-backend' directory.
