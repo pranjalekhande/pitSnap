@@ -146,13 +146,13 @@ export default function ProfileScreen() {
         {/* Friends Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>👥 Friends ({friends.length})</Text>
+            <Text style={styles.sectionTitle}>Friends ({friends.length})</Text>
             <TouchableOpacity
               style={styles.addFriendsButton}
               onPress={() => setShowAddFriends(true)}
             >
               <Ionicons name="person-add" size={20} color="#FFFFFF" />
-              <Text style={styles.addFriendsText}>Add</Text>
+              {/* <Text style={styles.addFriendsText}>Add</Text> */}
             </TouchableOpacity>
           </View>
 
@@ -211,18 +211,18 @@ export default function ProfileScreen() {
           <Text style={styles.sectionTitle}>⚡ Coming Soon</Text>
           
           <View style={styles.featureItem}>
-            <Text style={styles.featureTitle}>Phase 6: Direct Messaging</Text>
-            <Text style={styles.featureDescription}>Send photos/videos to friends</Text>
+            <Text style={styles.featureTitle}>AR Camera Filters</Text>
+            <Text style={styles.featureDescription}>F1 team helmets and racing-themed AR filters</Text>
           </View>
 
           <View style={styles.featureItem}>
-            <Text style={styles.featureTitle}>Phase 7: Stories</Text>
-            <Text style={styles.featureDescription}>24-hour disappearing stories</Text>
+            <Text style={styles.featureTitle}>Enhanced Personalization</Text>
+            <Text style={styles.featureDescription}>Follow favorite drivers and teams for personalized content</Text>
           </View>
 
           <View style={styles.featureItem}>
-            <Text style={styles.featureTitle}>Phase 10+: F1 Features</Text>
-            <Text style={styles.featureDescription}>Team themes, F1 AR filters, race data</Text>
+            <Text style={styles.featureTitle}>Premium Features</Text>
+            <Text style={styles.featureDescription}>Advanced AI insights and exclusive F1 content</Text>
           </View>
         </View>
 
