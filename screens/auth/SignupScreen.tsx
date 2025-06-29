@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,23 @@ export default function SignupScreen({ onSignupSuccess, onLoginPress }: SignupSc
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(false);
+  const displayNameInputRef = useRef<TextInput>(null);
+
+  // Reset state when component mounts (important for screen switching)
+  useEffect(() => {
+    setEmail('');
+    setPassword('');
+    setUsername('');
+    setDisplayName('');
+    setLoading(false);
+    
+    // Small delay to ensure proper focus after screen transition
+    const timer = setTimeout(() => {
+      displayNameInputRef.current?.focus();
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleSignup = async () => {
     if (!email || !password || !username || !displayName) {
@@ -58,20 +75,6 @@ export default function SignupScreen({ onSignupSuccess, onLoginPress }: SignupSc
       if (error) {
         Alert.alert('Signup Failed', error.message);
       } else if (data.user) {
-        // Update the users table with display_name
-        const { error: profileError } = await supabase
-          .from('users')
-          .upsert({
-            id: data.user.id,
-            email: data.user.email,
-            display_name: displayName.trim(),
-          });
-
-        if (profileError) {
-          console.error('Profile creation error:', profileError);
-          // Still show success since auth worked
-        }
-
         Alert.alert(
           'Success!', 
           'Account created successfully! Please check your email to verify your account.',
@@ -102,6 +105,7 @@ export default function SignupScreen({ onSignupSuccess, onLoginPress }: SignupSc
         {/* Signup Form */}
         <View style={styles.form}>
           <TextInput
+            ref={displayNameInputRef}
             style={styles.input}
             placeholder="Display Name"
             placeholderTextColor="#666"
@@ -109,6 +113,7 @@ export default function SignupScreen({ onSignupSuccess, onLoginPress }: SignupSc
             onChangeText={setDisplayName}
             autoCapitalize="words"
             autoCorrect={false}
+            editable={!loading}
           />
 
           <TextInput
@@ -119,6 +124,7 @@ export default function SignupScreen({ onSignupSuccess, onLoginPress }: SignupSc
             onChangeText={(text) => setUsername(text.toLowerCase())}
             autoCapitalize="none"
             autoCorrect={false}
+            editable={!loading}
           />
 
           <TextInput
@@ -130,6 +136,7 @@ export default function SignupScreen({ onSignupSuccess, onLoginPress }: SignupSc
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
+            editable={!loading}
           />
 
           <TextInput
@@ -140,6 +147,7 @@ export default function SignupScreen({ onSignupSuccess, onLoginPress }: SignupSc
             onChangeText={setPassword}
             secureTextEntry
             autoCapitalize="none"
+            editable={!loading}
           />
 
           <TouchableOpacity

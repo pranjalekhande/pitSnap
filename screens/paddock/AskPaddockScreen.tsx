@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -10,8 +10,9 @@ import {
   Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { askPaddock } from '../../services/paddockAiService';
+import { askPaddock, paddockAiService } from '../../services/paddockAiService';
 import TypingIndicator from '../../components/paddock/TypingIndicator';
+import { useNavigation } from '@react-navigation/native';
 
 interface Message {
   text: string;
@@ -27,11 +28,33 @@ interface QuickAction {
 }
 
 export default function AskPaddockScreen() {
+  const navigation = useNavigation();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(true);
   const [expandedMessages, setExpandedMessages] = useState<Set<number>>(new Set());
+  const [isPreloading, setIsPreloading] = useState(true);
+
+  // Preload common responses and F1 data for faster interactions
+  useEffect(() => {
+    const preloadData = async () => {
+      try {
+        console.log('🚀 Preloading Paddock AI for instant responses...');
+        
+        // Preload common responses in background
+        await paddockAiService.preloadCommonResponses();
+        
+        setIsPreloading(false);
+        console.log('✅ Paddock AI ready for lightning-fast responses!');
+      } catch (error) {
+        console.warn('Preloading failed, but app will still work:', error);
+        setIsPreloading(false);
+      }
+    };
+
+    preloadData();
+  }, []);
 
   // Strategic feature quick actions - optimized for shorter responses
   const quickActions: QuickAction[] = [
@@ -49,7 +72,7 @@ export default function AskPaddockScreen() {
     },
     {
       title: "Driver Rankings",
-      prompt: "Quick check: current 2024 championship standings?",
+      prompt: "Quick check: current championship standings?",
       icon: "trophy",
       color: "#FFD700"
     },
@@ -67,7 +90,7 @@ export default function AskPaddockScreen() {
     },
     {
       title: "Next Race",
-      prompt: "Brief: Canadian GP info and preview",
+      prompt: "Brief: British GP info and preview",
       icon: "time",
       color: "#9C27B0"
     }
@@ -176,6 +199,18 @@ export default function AskPaddockScreen() {
     setLoading(false);
   };
 
+  const handleBackPress = () => {
+    // Try to go back if there's navigation history
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      // If no back history (e.g., root tab), reset the chat
+      setMessages([]);
+      setShowQuickActions(true);
+      setExpandedMessages(new Set());
+    }
+  };
+
   return (
     <KeyboardAvoidingView 
       style={styles.container}
@@ -185,6 +220,9 @@ export default function AskPaddockScreen() {
       <View style={styles.headerContainer}>
         <Text style={styles.header}>🏎️ Paddock AI</Text>
         <Text style={styles.subtitle}>Advanced F1 Strategic Analysis</Text>
+        {isPreloading && (
+          <Text style={styles.preloadingText}>⚡ Optimizing for speed...</Text>
+        )}
       </View>
 
       <ScrollView style={styles.messagesContainer} showsVerticalScrollIndicator={false}>
@@ -205,7 +243,10 @@ export default function AskPaddockScreen() {
               ))}
             </View>
             <Text style={styles.quickActionsHint}>
-              Tap a feature above or ask your own F1 strategic question below
+              {isPreloading 
+                ? "⚡ Optimizing responses for instant results..." 
+                : "🚀 Lightning-fast responses ready! Tap a feature above or ask your own F1 question"
+              }
             </Text>
           </View>
         )}
@@ -277,17 +318,25 @@ export default function AskPaddockScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Reset Quick Actions Button */}
+      {/* Back Button */}
       {!showQuickActions && messages.length > 0 && (
         <TouchableOpacity
-          style={styles.resetButton}
-          onPress={() => {
+          style={styles.backButton}
+          onPress={handleBackPress}
+          onLongPress={async () => {
+            // Clear cache on long press for debugging
+            try {
+              await paddockAiService.clearCache();
+              console.log('🧹 Cache cleared via long press');
+            } catch (error) {
+              console.warn('Cache clear failed:', error);
+            }
             setMessages([]);
             setShowQuickActions(true);
+            setExpandedMessages(new Set());
           }}
         >
-          <Ionicons name="refresh" size={20} color="#FFFFFF" />
-          <Text style={styles.resetText}>New Analysis</Text>
+          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       )}
     </KeyboardAvoidingView>
@@ -316,6 +365,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#888',
     marginTop: 5,
+  },
+  preloadingText: {
+    fontSize: 12,
+    color: '#00D2FF',
+    marginTop: 3,
+    fontStyle: 'italic',
   },
   messagesContainer: {
     flex: 1,
@@ -452,20 +507,17 @@ const styles = StyleSheet.create({
   sendButtonDisabled: {
     backgroundColor: '#666',
   },
-  resetButton: {
+  backButton: {
     position: 'absolute',
     top: 60,
-    right: 15,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#333',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    left: 15,
+    width: 40,
+    height: 40,
+    backgroundColor: 'rgba(30, 30, 40, 0.9)',
     borderRadius: 20,
-  },
-  resetText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    marginLeft: 5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#333',
   },
 }); 

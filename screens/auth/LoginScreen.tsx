@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,21 @@ export default function LoginScreen({ onLoginSuccess, onSignupPress }: LoginScre
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const emailInputRef = useRef<TextInput>(null);
+
+  // Reset state when component mounts (important for screen switching)
+  useEffect(() => {
+    setEmail('');
+    setPassword('');
+    setLoading(false);
+    
+    // Small delay to ensure proper focus after screen transition
+    const timer = setTimeout(() => {
+      emailInputRef.current?.focus();
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -63,6 +78,7 @@ export default function LoginScreen({ onLoginSuccess, onSignupPress }: LoginScre
       {/* Login Form */}
       <View style={styles.form}>
         <TextInput
+          ref={emailInputRef}
           style={styles.input}
           placeholder="Email"
           placeholderTextColor="#666"
@@ -71,6 +87,7 @@ export default function LoginScreen({ onLoginSuccess, onSignupPress }: LoginScre
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
+          editable={!loading}
         />
 
         <TextInput
@@ -81,6 +98,7 @@ export default function LoginScreen({ onLoginSuccess, onSignupPress }: LoginScre
           onChangeText={setPassword}
           secureTextEntry
           autoCapitalize="none"
+          editable={!loading}
         />
 
         <TouchableOpacity

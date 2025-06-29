@@ -21,6 +21,43 @@ PitSnap is a **Snapchat-inspired social media app** with F1 theming, featuring e
 
 ---
 
+## 📱 **App Screenshots**
+
+Get a visual preview of PitSnap's key features:
+
+### **🏁 Pit Wall - F1 Command Center**
+<div align="center">
+  <img src="assets/screenshots/pitwall-standings.png" alt="Pit Wall Standings" width="250"/>
+  <img src="assets/screenshots/pitwall-feed.png" alt="Pit Wall Feed" width="250"/>
+  <img src="assets/screenshots/pitwall-calendar.png" alt="Pit Wall Calendar" width="250"/>
+</div>
+
+*F1 championship standings, race feed with stories, and race calendar with countdown timers*
+
+### **🤖 Paddock AI - Strategic Analysis**
+<div align="center">
+  <img src="assets/screenshots/paddock-ai.png" alt="Paddock AI Strategic Features" width="250"/>
+</div>
+
+*Advanced F1 strategic analysis with What-If scenarios, Historical Strategy, and quick action buttons*
+
+### **💬 Social Features**
+<div align="center">
+  <img src="assets/screenshots/chats-screen.png" alt="Chats Screen" width="250"/>
+  <img src="assets/screenshots/login-screen.png" alt="Login Screen" width="250"/>
+</div>
+
+*Real-time messaging and sleek authentication interface*
+
+### **✨ Key Visual Features**
+- **F1 Racing Theme**: Red and black color scheme with racing-inspired UI
+- **Snapchat-Style Stories**: Circular story indicators with view counts  
+- **Smart Loading States**: Skeleton screens for optimal UX
+- **Race Data Integration**: Live F1 standings, countdown timers, and race schedules
+- **Strategic AI Interface**: 6 colorful quick-action buttons for instant F1 analysis
+
+---
+
 ## ⚡ **Performance Optimizations (Latest Update)**
 
 ### **🚀 Major Performance Improvements**

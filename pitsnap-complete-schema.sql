@@ -104,8 +104,16 @@ $$ language 'plpgsql';
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.users (id, email)
-  VALUES (NEW.id, NEW.email);
+  INSERT INTO public.users (id, email, display_name)
+  VALUES (
+    NEW.id, 
+    NEW.email,
+    COALESCE(
+      NEW.raw_user_meta_data->>'display_name',
+      NEW.raw_user_meta_data->>'username', 
+      split_part(NEW.email, '@', 1)
+    )
+  );
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -358,9 +366,9 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 DO $$
 BEGIN
-    RAISE NOTICE '🏁 PitSnap Database Schema Created Successfully! ✅';
+    RAISE NOTICE '🏁 PitSnap Database Schema Created Successfully!';
     RAISE NOTICE 'Tables: users, friends, groups, group_members, messages, stories, story_views';
-    RAISE NOTICE 'Features: Individual chat ✅ Group chat ✅ Stories ✅ Friends ✅';
-    RAISE NOTICE 'Security: RLS policies configured without recursion ✅';
-    RAISE NOTICE 'Performance: All indexes created ✅';
+    RAISE NOTICE 'Features: Individual chat, Group chat, Stories, Friends';
+    RAISE NOTICE 'Security: RLS policies configured without recursion';
+    RAISE NOTICE 'Performance: All indexes created';
 END $$; 

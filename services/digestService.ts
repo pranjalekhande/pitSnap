@@ -22,6 +22,7 @@ class DigestService {
     try {
       // Check if API key is available
       if (!OPENAI_API_KEY) {
+        console.warn('OpenAI API key not configured, using fallback digest');
         return this.createFallbackDigest(pitWallData);
       }
 
@@ -51,6 +52,14 @@ class DigestService {
       });
 
       if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        console.warn(`OpenAI API error ${response.status}: ${response.statusText} - ${errorText}`);
+        
+        // For authentication errors, log additional info
+        if (response.status === 401) {
+          console.warn('OpenAI API key appears to be invalid or expired. Please check your API key configuration.');
+        }
+        
         throw new Error(`OpenAI API error: ${response.status}`);
       }
 
@@ -60,6 +69,12 @@ class DigestService {
       return this.parseAIResponse(aiContent, pitWallData);
     } catch (error) {
       console.error('Error generating AI digest:', error);
+      
+      // Provide more specific error messaging
+      if (error instanceof Error && error.message.includes('401')) {
+        console.warn('Falling back to template digest due to OpenAI authentication error');
+      }
+      
       // Fallback to template-based digest
       return this.createFallbackDigest(pitWallData);
     }
@@ -141,12 +156,35 @@ Focus on race excitement, team dynamics, and upcoming races rather than points. 
    * Create fallback digest when AI fails
    */
   private createFallbackDigest(pitWallData: PitWallData, aiContent?: string): DailyDigest {
+    const headlines = [];
+    
+    // Add AI content if available
+    if (aiContent) {
+      headlines.push(aiContent.slice(0, 100) + '...');
+    }
+    
+    // Add dynamic headlines based on available data
+    if (pitWallData.latest_results?.results?.[0]) {
+      const winner = pitWallData.latest_results.results[0];
+      headlines.push(`🏆 ${winner.driver} (${winner.team}) claimed victory in the latest race!`);
+    } else {
+      headlines.push('🏁 F1 2025 season brings incredible racing action!');
+    }
+    
+    if (pitWallData.next_race) {
+      headlines.push(`🔥 ${pitWallData.next_race.name} approaching - excitement builds!`);
+    } else {
+      headlines.push('🚀 Teams pushing development to the limit');
+    }
+    
+    // Ensure we have at least 2 headlines
+    if (headlines.length < 2) {
+      headlines.push('⚡ The championship battle intensifies every race weekend');
+    }
+
     const fallbackDigest = {
       greeting: this.getTimeBasedGreeting(),
-      headlines: [
-        aiContent ? aiContent.slice(0, 100) + '...' : 'F1 2025 season brings incredible racing action!',
-        'Teams pushing development to the limit',
-      ],
+      headlines: headlines.slice(0, 3), // Maximum 3 headlines
       championship_insight: this.getChampionshipInsight(pitWallData),
       next_race_preview: this.getNextRacePreview(pitWallData),
       generated_at: new Date().toISOString(),

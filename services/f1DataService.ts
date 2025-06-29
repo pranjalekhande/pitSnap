@@ -2,406 +2,367 @@
 // Connects to the Paddock AI backend to fetch F1 data
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_URL = "http://10.0.0.210:8000";  // For physical phone on local network
-// const API_URL = "http://127.0.0.1:8000";  // For simulator only
+const API_BASE_URL = 'http://10.0.0.210:8000';
 
-// Cache configuration
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
-const CACHE_PREFIX = 'f1_data_cache_';
-
-// Request deduplication map
-const ongoingRequests = new Map<string, Promise<any>>();
-
-export interface F1Event {
-  round: number;
-  name: string;
-  location: string;
-  country: string;
-  date: string;
-  is_upcoming: boolean;
-  circuit: string;
-}
-
-export interface F1Schedule {
-  season: number;
-  events: F1Event[];
-  total_rounds: number;
-}
-
-export interface F1NextRace {
-  round: number;
-  name: string;
-  location: string;
-  country: string;
-  date: string;
-  days_until: number;
-}
-
-export interface F1RaceResult {
-  position: number;
-  driver: string;
-  team: string;
-  time: string;
-  points: number;
-}
-
-export interface F1LatestResults {
-  race: string;
-  date: string;
-  results?: F1RaceResult[];
-  message?: string;
-  error?: string;
-}
-
-// NEW: Championship standings interfaces (added alongside existing ones)
-export interface F1DriverStanding {
-  position: number;
-  driver: string;
-  team: string;
-  points: number;
-  wins?: number;
-  podiums?: number;
-}
-
-export interface F1ConstructorStanding {
-  position: number;
-  team: string;
-  points: number;
-  wins?: number;
-  podiums?: number;
-}
-
-export interface F1ChampionshipStandings {
-  drivers: F1DriverStanding[];
-  constructors?: F1ConstructorStanding[];
-  season: number;
-  races_completed: number;
-  last_updated: string;
-}
-
-// Enhanced PitWallData interface (extending existing one)
-export interface PitWallData {
-  schedule: F1Schedule;
-  next_race: F1NextRace;
-  latest_results: F1LatestResults;
-  // NEW: Adding championship standings (optional to not break existing usage)
-  championship_standings?: F1ChampionshipStandings;
-  timestamp: string;
-}
-
-interface CacheItem<T> {
-  data: T;
+interface CacheEntry {
+  data: any;
   timestamp: number;
   ttl: number;
 }
 
-/**
- * Service for fetching F1 data from the Paddock AI backend with caching
- */
+interface F1Event {
+  round: number;
+  name: string;
+  status: 'completed' | 'current' | 'upcoming';
+  is_live?: boolean;
+  live_session?: string;
+  cache_ttl?: number;
+  next_session?: string;
+  next_session_time?: string;
+}
+
 class F1DataService {
-  
-  /**
-   * Cache management utilities
-   */
-  private async setCache<T>(key: string, data: T, ttl: number = CACHE_TTL): Promise<void> {
+  private cache: Map<string, CacheEntry> = new Map();
+  private requestCache: Map<string, Promise<any>> = new Map();
+
+  // Multi-tier caching with context-aware TTL
+  private getCacheTTL(cacheKey: string, contextData?: any): number {
+    // If we have context data with cache_ttl recommendation, use it
+    if (contextData?.cache_ttl) {
+      return contextData.cache_ttl * 1000; // Convert seconds to milliseconds
+    }
+
+    // Fallback TTL based on data type
+    const cacheConfig = {
+      'standings': 30000,           // 30 seconds - frequently updated
+      'next-race': 300000,          // 5 minutes - schedule changes
+      'schedule': 1800000,          // 30 minutes - relatively stable
+      'results': 300000,            // 5 minutes - post-race updates
+      'basic-data': 30000,          // 30 seconds - instant responses
+      'pit-wall-data': 60000,       // 1 minute - dashboard data
+      'schedule-with-timing': 60000, // 1 minute - enhanced schedule
+      'current-race-info': 30000,   // 30 seconds - live race data
+      'next-race-info': 300000,     // 5 minutes - upcoming race details
+    };
+
+    // Extract base key from cache key
+    const baseKey = cacheKey.split('?')[0];
+    return cacheConfig[baseKey as keyof typeof cacheConfig] || 300000; // Default 5 minutes
+  }
+
+  private async getCachedData(key: string): Promise<any | null> {
+    // Check memory cache first
+    const memoryEntry = this.cache.get(key);
+    if (memoryEntry && Date.now() - memoryEntry.timestamp < memoryEntry.ttl) {
+      console.log(`📱 Memory cache hit: ${key}`);
+      return memoryEntry.data;
+    }
+
+    // Check AsyncStorage cache
     try {
-      const cacheItem: CacheItem<T> = {
-        data,
-        timestamp: Date.now(),
-        ttl
-      };
-      await AsyncStorage.setItem(CACHE_PREFIX + key, JSON.stringify(cacheItem));
+      const cached = await AsyncStorage.getItem(`f1_cache_${key}`);
+      if (cached) {
+        const entry: CacheEntry = JSON.parse(cached);
+        if (Date.now() - entry.timestamp < entry.ttl) {
+          console.log(`💾 Storage cache hit: ${key}`);
+          // Also store in memory cache for faster access
+          this.cache.set(key, entry);
+          return entry.data;
+        }
+      }
     } catch (error) {
-      console.warn('Failed to cache data:', error);
+      console.warn('Cache read error:', error);
+    }
+
+    return null;
+  }
+
+  private async setCachedData(key: string, data: any, customTtl?: number): Promise<void> {
+    const ttl = customTtl || this.getCacheTTL(key, data);
+    const entry: CacheEntry = {
+      data,
+      timestamp: Date.now(),
+      ttl
+    };
+
+    // Store in memory cache
+    this.cache.set(key, entry);
+
+    // Store in AsyncStorage
+    try {
+      await AsyncStorage.setItem(`f1_cache_${key}`, JSON.stringify(entry));
+    } catch (error) {
+      console.warn('Cache write error:', error);
     }
   }
 
-  private async getCache<T>(key: string): Promise<T | null> {
+  private async makeRequest(endpoint: string): Promise<any> {
+    // Request deduplication - prevent multiple identical requests
+    const requestKey = endpoint;
+    if (this.requestCache.has(requestKey)) {
+      console.log(`🔄 Request deduplication: ${endpoint}`);
+      return this.requestCache.get(requestKey);
+    }
+
+    const requestPromise = fetch(`${API_BASE_URL}${endpoint}`)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .finally(() => {
+        // Remove from request cache when complete
+        this.requestCache.delete(requestKey);
+      });
+
+    this.requestCache.set(requestKey, requestPromise);
+    return requestPromise;
+  }
+
+  // Enhanced methods with timing support
+
+  async getScheduleWithTiming(): Promise<any> {
+    const cacheKey = 'schedule-with-timing';
+    
+    // Try cache first
+    const cached = await this.getCachedData(cacheKey);
+    if (cached) return cached;
+
     try {
-      const cached = await AsyncStorage.getItem(CACHE_PREFIX + key);
-      if (!cached) return null;
-
-      const cacheItem: CacheItem<T> = JSON.parse(cached);
-      const now = Date.now();
+      console.log('🏁 Fetching enhanced F1 schedule with timing...');
+      const data = await this.makeRequest('/f1/schedule-with-timing');
       
-      // Check if cache is still valid
-      if (now - cacheItem.timestamp > cacheItem.ttl) {
-        // Cache expired, remove it
-        await AsyncStorage.removeItem(CACHE_PREFIX + key);
-        return null;
-      }
-
-      return cacheItem.data;
+      // Cache with dynamic TTL based on race context
+      await this.setCachedData(cacheKey, data);
+      return data;
     } catch (error) {
-      console.warn('Failed to read cache:', error);
+      console.error('Error fetching schedule with timing:', error);
+      throw error;
+    }
+  }
+
+  async getCurrentRaceInfo(): Promise<any> {
+    const cacheKey = 'current-race-info';
+    
+    // Try cache first
+    const cached = await this.getCachedData(cacheKey);
+    if (cached) return cached;
+
+    try {
+      console.log('🏆 Fetching current race info...');
+      const data = await this.makeRequest('/f1/current-race-info');
+      
+      // Use short cache for current race (could be live)
+      const cacheTtl = data.is_live ? 15000 : 60000; // 15s if live, 1min otherwise
+      await this.setCachedData(cacheKey, data, cacheTtl);
+      return data;
+    } catch (error) {
+      console.error('Error fetching current race info:', error);
+      throw error;
+    }
+  }
+
+  async getNextRaceInfo(): Promise<any> {
+    const cacheKey = 'next-race-info';
+    
+    // Try cache first
+    const cached = await this.getCachedData(cacheKey);
+    if (cached) return cached;
+
+    try {
+      console.log('⏭️ Fetching next race info with timing...');
+      const data = await this.makeRequest('/f1/next-race-info');
+      
+      // Dynamic cache based on proximity to race
+      const daysUntilRace = data.countdown_days || 30;
+      const cacheTtl = daysUntilRace < 7 ? 300000 : 1800000; // 5min if <7 days, 30min otherwise
+      await this.setCachedData(cacheKey, data, cacheTtl);
+      return data;
+    } catch (error) {
+      console.error('Error fetching next race info:', error);
+      throw error;
+    }
+  }
+
+  async getBasicF1Data(): Promise<any> {
+    const cacheKey = 'basic-data';
+    
+    // Try cache first
+    const cached = await this.getCachedData(cacheKey);
+    if (cached) return cached;
+
+    try {
+      console.log('⚡ Fetching basic F1 data for instant UI...');
+      const data = await this.makeRequest('/f1/basic-data');
+      
+      // Short cache for basic data (30 seconds)
+      await this.setCachedData(cacheKey, data, 30000);
+      return data;
+    } catch (error) {
+      console.error('Error fetching basic F1 data:', error);
+      throw error;
+    }
+  }
+
+  // Enhanced Pit Wall data with timing
+  async getPitWallData(): Promise<any> {
+    const cacheKey = 'pit-wall-data';
+    
+    // Try cache first
+    const cached = await this.getCachedData(cacheKey);
+    if (cached) return cached;
+
+    try {
+      console.log('🏁 Fetching enhanced Pit Wall data...');
+      const data = await this.makeRequest('/f1/pit-wall-data');
+      
+      // Dynamic cache based on race context
+      let cacheTtl = 60000; // Default 1 minute
+      
+      if (data.current_race?.is_live) {
+        cacheTtl = 15000; // 15 seconds during live sessions
+      } else if (data.current_race?.status === 'current') {
+        cacheTtl = 30000; // 30 seconds during race weekends
+      }
+      
+      await this.setCachedData(cacheKey, data, cacheTtl);
+      return data;
+    } catch (error) {
+      console.error('Error fetching pit wall data:', error);
+      throw error;
+    }
+  }
+
+  // Existing methods with enhanced caching
+
+  async getDriverStandings(): Promise<any> {
+    const cacheKey = 'standings';
+    
+    const cached = await this.getCachedData(cacheKey);
+    if (cached) return cached;
+
+    try {
+      console.log('🏆 Fetching F1 driver standings...');
+      const data = await this.makeRequest('/f1/standings');
+      await this.setCachedData(cacheKey, data);
+      return data;
+    } catch (error) {
+      console.error('Error fetching driver standings:', error);
+      throw error;
+    }
+  }
+
+  async getNextRace(): Promise<any> {
+    const cacheKey = 'next-race';
+    
+    const cached = await this.getCachedData(cacheKey);
+    if (cached) return cached;
+
+    try {
+      console.log('⏭️ Fetching next F1 race...');
+      const data = await this.makeRequest('/f1/next-race');
+      await this.setCachedData(cacheKey, data);
+      return data;
+    } catch (error) {
+      console.error('Error fetching next race:', error);
+      throw error;
+    }
+  }
+
+  async getSchedule(): Promise<any> {
+    const cacheKey = 'schedule';
+    
+    const cached = await this.getCachedData(cacheKey);
+    if (cached) return cached;
+
+    try {
+      console.log('📅 Fetching F1 schedule...');
+      const data = await this.makeRequest('/f1/schedule');
+      await this.setCachedData(cacheKey, data);
+      return data;
+    } catch (error) {
+      console.error('Error fetching F1 schedule:', error);
+      throw error;
+    }
+  }
+
+  async getLatestResults(): Promise<any> {
+    const cacheKey = 'results';
+    
+    const cached = await this.getCachedData(cacheKey);
+    if (cached) return cached;
+
+    try {
+      console.log('🏁 Fetching latest F1 results...');
+      const data = await this.makeRequest('/f1/latest-results');
+      await this.setCachedData(cacheKey, data);
+      return data;
+    } catch (error) {
+      console.error('Error fetching latest results:', error);
+      throw error;
+    }
+  }
+
+  // Cache management utilities
+
+  async clearCache(): Promise<void> {
+    try {
+      // Clear memory cache
+      this.cache.clear();
+      
+      // Clear AsyncStorage cache
+      const keys = await AsyncStorage.getAllKeys();
+      const f1CacheKeys = keys.filter(key => key.startsWith('f1_cache_'));
+      await AsyncStorage.multiRemove(f1CacheKeys);
+      
+      console.log('🧹 F1 cache cleared');
+    } catch (error) {
+      console.error('Error clearing cache:', error);
+    }
+  }
+
+  async getCacheStats(): Promise<any> {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const f1CacheKeys = keys.filter(key => key.startsWith('f1_cache_'));
+      
+      const stats = {
+        memoryCache: this.cache.size,
+        storageCache: f1CacheKeys.length,
+        activeRequests: this.requestCache.size,
+        cacheKeys: Array.from(this.cache.keys())
+      };
+      
+      console.log('📊 Cache stats:', stats);
+      return stats;
+    } catch (error) {
+      console.error('Error getting cache stats:', error);
       return null;
     }
   }
 
-  private async clearCache(): Promise<void> {
+  // Preload critical data for instant UI
+  async preloadCriticalData(): Promise<void> {
     try {
-      const keys = await AsyncStorage.getAllKeys();
-      const cacheKeys = keys.filter(key => key.startsWith(CACHE_PREFIX));
-      await AsyncStorage.multiRemove(cacheKeys);
-    } catch (error) {
-      console.warn('Failed to clear cache:', error);
-    }
-  }
-
-  /**
-   * Generic API request with caching and deduplication
-   */
-  private async fetchWithCache<T>(
-    endpoint: string, 
-    cacheKey: string, 
-    ttl: number = CACHE_TTL
-  ): Promise<T> {
-    // Check cache first
-    const cached = await this.getCache<T>(cacheKey);
-    if (cached) {
-      // Cache hit
-      return cached;
-    }
-
-    // Check if request is already in progress (deduplication)
-    if (ongoingRequests.has(cacheKey)) {
-      // Deduplicating request
-      return ongoingRequests.get(cacheKey);
-    }
-
-    // Make the request
-    const requestPromise = this.makeRequest<T>(endpoint);
-    ongoingRequests.set(cacheKey, requestPromise);
-
-    try {
-      const data = await requestPromise;
+      console.log('🚀 Preloading critical F1 data...');
       
-      // Cache the result
-      await this.setCache(cacheKey, data, ttl);
-      // Cached result
+      // Load basic data first for instant UI responses
+      await this.getBasicF1Data();
       
-      return data;
-    } finally {
-      // Clean up ongoing request
-      ongoingRequests.delete(cacheKey);
-    }
-  }
-
-  private async makeRequest<T>(endpoint: string): Promise<T> {
-    // API request
-    
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    return response.json();
-  }
-
-  /**
-   * Get the 2025 F1 race schedule
-   */
-  async getSchedule(): Promise<F1Schedule> {
-    return this.fetchWithCache<F1Schedule>('/f1/schedule', 'schedule', 30 * 60 * 1000); // 30 min cache
-  }
-
-  /**
-   * Get information about the next upcoming race
-   */
-  async getNextRace(): Promise<F1NextRace> {
-    return this.fetchWithCache<F1NextRace>('/f1/next-race', 'next_race', 60 * 60 * 1000); // 1 hour cache
-  }
-
-  /**
-   * Get results from the most recent completed race
-   */
-  async getLatestResults(): Promise<F1LatestResults> {
-    return this.fetchWithCache<F1LatestResults>('/f1/latest-results', 'latest_results', 15 * 60 * 1000); // 15 min cache
-  }
-
-  /**
-   * Get current F1 driver standings
-   */
-  async getStandings(): Promise<F1LatestResults> {
-    return this.fetchWithCache<F1LatestResults>('/f1/standings', 'standings', 30 * 60 * 1000); // 30 min cache
-  }
-
-  /**
-   * NEW: Get championship standings with proper data structure
-   * This method processes the raw standings data into a proper championship format
-   */
-  async getChampionshipStandings(): Promise<F1ChampionshipStandings> {
-    try {
-      // Get raw standings data from existing working endpoint
-      const rawStandings = await this.getStandings();
-      
-      // Process the data into proper championship standings format
-      const drivers: F1DriverStanding[] = [];
-      
-      if (rawStandings.results && Array.isArray(rawStandings.results)) {
-        // Create standings from race results data (temporary processing)
-        const driverMap = new Map<string, F1DriverStanding>();
-        
-        rawStandings.results.forEach((result, index) => {
-          if (result.driver && result.team) {
-            const driverKey = result.driver;
-            if (!driverMap.has(driverKey)) {
-              driverMap.set(driverKey, {
-                position: index + 1, // Temporary position assignment
-                driver: result.driver,
-                team: result.team,
-                points: result.points || 0,
-                wins: 0,
-                podiums: 0
-              });
-            }
-          }
-        });
-        
-        drivers.push(...Array.from(driverMap.values()).slice(0, 20)); // Top 20 drivers
-      }
-      
-      // If no valid data, provide fallback mock data for development
-      if (drivers.length === 0) {
-        // Using fallback data
-        return {
-          drivers: [
-            { position: 1, driver: 'Max Verstappen', team: 'Red Bull Racing', points: 250, wins: 3, podiums: 8 },
-            { position: 2, driver: 'Lando Norris', team: 'McLaren', points: 210, wins: 2, podiums: 6 },
-            { position: 3, driver: 'Charles Leclerc', team: 'Ferrari', points: 185, wins: 1, podiums: 5 },
-            { position: 4, driver: 'Oscar Piastri', team: 'McLaren', points: 165, wins: 1, podiums: 4 },
-            { position: 5, driver: 'George Russell', team: 'Mercedes', points: 140, wins: 0, podiums: 3 },
-            { position: 6, driver: 'Lewis Hamilton', team: 'Ferrari', points: 125, wins: 0, podiums: 2 },
-            { position: 7, driver: 'Carlos Sainz', team: 'Williams', points: 90, wins: 0, podiums: 1 },
-            { position: 8, driver: 'Fernando Alonso', team: 'Aston Martin', points: 45, wins: 0, podiums: 0 }
-          ],
-          season: 2025,
-          races_completed: 10,
-          last_updated: new Date().toISOString()
-        };
-      }
-      
-      return {
-        drivers: drivers.sort((a, b) => b.points - a.points), // Sort by points
-        season: 2025,
-        races_completed: rawStandings.race ? 1 : 0,
-        last_updated: new Date().toISOString()
-      };
-      
-    } catch (error) {
-      console.error('❌ Error fetching championship standings:', error);
-      
-      // Fallback to cached data or mock data
-      const cached = await this.getCache<F1ChampionshipStandings>('championship_standings');
-      if (cached) {
-        // Returning cached fallback
-        return cached;
-      }
-      
-      throw new Error('Failed to fetch championship standings');
-    }
-  }
-
-  /**
-   * Get all data needed for Pit Wall (ENHANCED VERSION - doesn't break existing usage)
-   */
-  async getPitWallData(): Promise<PitWallData> {
-    // Fetching pit wall data
-    
-    try {
-      // Use Promise.all for parallel requests with caching (EXISTING LOGIC UNCHANGED)
-      const [schedule, nextRace, latestResults] = await Promise.all([
-        this.getSchedule(),
-        this.getNextRace(),
-        this.getLatestResults(),
+      // Load enhanced data in parallel
+      await Promise.all([
+        this.getCurrentRaceInfo(),
+        this.getNextRaceInfo(),
+        this.getDriverStandings()
       ]);
-
-      // NEW: Try to get championship standings (optional - won't break if it fails)
-      let championshipStandings: F1ChampionshipStandings | undefined;
-      try {
-        championshipStandings = await this.getChampionshipStandings();
-      } catch (error) {
-        // Could not fetch championship standings
-        championshipStandings = undefined;
-      }
-
-      const pitWallData: PitWallData = {
-        schedule,
-        next_race: nextRace,
-        latest_results: latestResults,
-        // NEW: Add championship standings if available
-        championship_standings: championshipStandings,
-        timestamp: new Date().toISOString(),
-      };
-
-      // Cache the complete pit wall data for quick subsequent loads
-      await this.setCache('pit_wall_complete', pitWallData, 10 * 60 * 1000); // 10 min cache
-
-      // Data fetched successfully
-      return pitWallData;
-
-    } catch (error) {
-      console.error("❌ Error fetching pit wall data:", error);
       
-      // Try to return cached complete data as fallback
-      const cachedComplete = await this.getCache<PitWallData>('pit_wall_complete');
-      if (cachedComplete) {
-        // Returning cached fallback
-        return cachedComplete;
-      }
-      
-      throw new Error("Failed to fetch pit wall data");
-    }
-  }
-
-  /**
-   * Force refresh data (bypasses cache)
-   */
-  async forceRefresh(): Promise<void> {
-    // Force refreshing data
-    await this.clearCache();
-    ongoingRequests.clear();
-  }
-
-  /**
-   * Test connection to F1 data service
-   */
-  async testConnection(): Promise<boolean> {
-    try {
-      const nextRace = await this.getNextRace();
-      // Connection test successful
-      return true;
+      console.log('✅ Critical F1 data preloaded');
     } catch (error) {
-      console.error("❌ F1 Data Service connection test failed:", error);
-      return false;
-    }
-  }
-
-  /**
-   * Get cache statistics (for debugging)
-   */
-  async getCacheStats(): Promise<{ totalCacheItems: number; cacheKeys: string[] }> {
-    try {
-      const keys = await AsyncStorage.getAllKeys();
-      const cacheKeys = keys.filter(key => key.startsWith(CACHE_PREFIX));
-      return {
-        totalCacheItems: cacheKeys.length,
-        cacheKeys: cacheKeys.map(key => key.replace(CACHE_PREFIX, ''))
-      };
-    } catch (error) {
-      return { totalCacheItems: 0, cacheKeys: [] };
+      console.error('Error preloading critical data:', error);
     }
   }
 }
 
-// Export singleton instance
 export const f1DataService = new F1DataService();
-
-// Export default
 export default f1DataService; 

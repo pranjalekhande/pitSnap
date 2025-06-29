@@ -233,8 +233,6 @@ export default function StandingsTab({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>🏆 Standings & Results</Text>
-      <Text style={styles.subtitle}>Championship standings and race data will be moved here</Text>
       <FlatList
         data={standingsItems}
         renderItem={renderStandingsItem}
@@ -273,9 +271,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#15151E',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
   },
   title: {
     fontSize: 24,

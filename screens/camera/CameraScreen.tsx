@@ -637,9 +637,9 @@ export default function CameraScreen({ setTabBarVisible }: CameraScreenProps) {
             disabled={sending}
           >
             <Ionicons name="send" size={24} color="#FFFFFF" />
-            <Text style={styles.snapchatSendText}>
-              {sending ? 'Sending...' : `${selectedFriends.size}`}
-            </Text>
+            {sending && (
+              <Text style={styles.snapchatSendText}>Sending...</Text>
+            )}
           </TouchableOpacity>
         )}
       </View>
