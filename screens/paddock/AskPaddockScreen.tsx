@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -10,7 +10,7 @@ import {
   Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { askPaddock } from '../../services/paddockAiService';
+import { askPaddock, paddockAiService } from '../../services/paddockAiService';
 import TypingIndicator from '../../components/paddock/TypingIndicator';
 
 interface Message {
@@ -32,6 +32,27 @@ export default function AskPaddockScreen() {
   const [loading, setLoading] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(true);
   const [expandedMessages, setExpandedMessages] = useState<Set<number>>(new Set());
+  const [isPreloading, setIsPreloading] = useState(true);
+
+  // Preload common responses and F1 data for faster interactions
+  useEffect(() => {
+    const preloadData = async () => {
+      try {
+        console.log('🚀 Preloading Paddock AI for instant responses...');
+        
+        // Preload common responses in background
+        await paddockAiService.preloadCommonResponses();
+        
+        setIsPreloading(false);
+        console.log('✅ Paddock AI ready for lightning-fast responses!');
+      } catch (error) {
+        console.warn('Preloading failed, but app will still work:', error);
+        setIsPreloading(false);
+      }
+    };
+
+    preloadData();
+  }, []);
 
   // Strategic feature quick actions - optimized for shorter responses
   const quickActions: QuickAction[] = [
@@ -49,7 +70,7 @@ export default function AskPaddockScreen() {
     },
     {
       title: "Driver Rankings",
-      prompt: "Quick check: current 2024 championship standings?",
+      prompt: "Quick check: current championship standings?",
       icon: "trophy",
       color: "#FFD700"
     },
@@ -67,7 +88,7 @@ export default function AskPaddockScreen() {
     },
     {
       title: "Next Race",
-      prompt: "Brief: Canadian GP info and preview",
+      prompt: "Brief: British GP info and preview",
       icon: "time",
       color: "#9C27B0"
     }
@@ -185,6 +206,9 @@ export default function AskPaddockScreen() {
       <View style={styles.headerContainer}>
         <Text style={styles.header}>🏎️ Paddock AI</Text>
         <Text style={styles.subtitle}>Advanced F1 Strategic Analysis</Text>
+        {isPreloading && (
+          <Text style={styles.preloadingText}>⚡ Optimizing for speed...</Text>
+        )}
       </View>
 
       <ScrollView style={styles.messagesContainer} showsVerticalScrollIndicator={false}>
@@ -205,7 +229,10 @@ export default function AskPaddockScreen() {
               ))}
             </View>
             <Text style={styles.quickActionsHint}>
-              Tap a feature above or ask your own F1 strategic question below
+              {isPreloading 
+                ? "⚡ Optimizing responses for instant results..." 
+                : "🚀 Lightning-fast responses ready! Tap a feature above or ask your own F1 question"
+              }
             </Text>
           </View>
         )}
@@ -285,6 +312,17 @@ export default function AskPaddockScreen() {
             setMessages([]);
             setShowQuickActions(true);
           }}
+          onLongPress={async () => {
+            // Clear cache on long press for debugging
+            try {
+              await paddockAiService.clearCache();
+              console.log('🧹 Cache cleared via long press');
+            } catch (error) {
+              console.warn('Cache clear failed:', error);
+            }
+            setMessages([]);
+            setShowQuickActions(true);
+          }}
         >
           <Ionicons name="refresh" size={20} color="#FFFFFF" />
           <Text style={styles.resetText}>New Analysis</Text>
@@ -316,6 +354,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#888',
     marginTop: 5,
+  },
+  preloadingText: {
+    fontSize: 12,
+    color: '#00D2FF',
+    marginTop: 3,
+    fontStyle: 'italic',
   },
   messagesContainer: {
     flex: 1,
