@@ -12,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { askPaddock, paddockAiService } from '../../services/paddockAiService';
 import TypingIndicator from '../../components/paddock/TypingIndicator';
+import { useNavigation } from '@react-navigation/native';
 
 interface Message {
   text: string;
@@ -27,6 +28,7 @@ interface QuickAction {
 }
 
 export default function AskPaddockScreen() {
+  const navigation = useNavigation();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -197,6 +199,18 @@ export default function AskPaddockScreen() {
     setLoading(false);
   };
 
+  const handleBackPress = () => {
+    // Try to go back if there's navigation history
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      // If no back history (e.g., root tab), reset the chat
+      setMessages([]);
+      setShowQuickActions(true);
+      setExpandedMessages(new Set());
+    }
+  };
+
   return (
     <KeyboardAvoidingView 
       style={styles.container}
@@ -304,14 +318,11 @@ export default function AskPaddockScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Reset Quick Actions Button */}
+      {/* Back Button */}
       {!showQuickActions && messages.length > 0 && (
         <TouchableOpacity
-          style={styles.resetButton}
-          onPress={() => {
-            setMessages([]);
-            setShowQuickActions(true);
-          }}
+          style={styles.backButton}
+          onPress={handleBackPress}
           onLongPress={async () => {
             // Clear cache on long press for debugging
             try {
@@ -322,10 +333,10 @@ export default function AskPaddockScreen() {
             }
             setMessages([]);
             setShowQuickActions(true);
+            setExpandedMessages(new Set());
           }}
         >
-          <Ionicons name="refresh" size={20} color="#FFFFFF" />
-          <Text style={styles.resetText}>New Analysis</Text>
+          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       )}
     </KeyboardAvoidingView>
@@ -496,20 +507,17 @@ const styles = StyleSheet.create({
   sendButtonDisabled: {
     backgroundColor: '#666',
   },
-  resetButton: {
+  backButton: {
     position: 'absolute',
     top: 60,
-    right: 15,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#333',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    left: 15,
+    width: 40,
+    height: 40,
+    backgroundColor: 'rgba(30, 30, 40, 0.9)',
     borderRadius: 20,
-  },
-  resetText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    marginLeft: 5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#333',
   },
 }); 

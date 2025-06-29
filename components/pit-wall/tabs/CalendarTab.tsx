@@ -7,7 +7,7 @@ import {
   RefreshControl,
   TouchableOpacity,
 } from 'react-native';
-import { F1Event, F1NextRace } from '../../../services/f1DataService';
+// Removed unused imports - using any types for now
 import { countdownService, CountdownTime } from '../../../services/countdownService';
 
 interface CalendarTabProps {
@@ -72,7 +72,7 @@ const CountdownDisplay: React.FC<{ targetDate: string; title: string }> = ({ tar
 };
 
 // Race card component
-const RaceCard: React.FC<{ event: F1Event; isNext: boolean }> = ({ event, isNext }) => {
+const RaceCard: React.FC<{ event: any; isNext: boolean }> = ({ event, isNext }) => {
   const raceDate = new Date(event.date);
   const isPast = raceDate < new Date();
   
@@ -114,7 +114,7 @@ export default function CalendarTab({
   const schedule = pitWallData?.schedule;
   const nextRace = pitWallData?.next_race;
   
-  if (!schedule || !schedule.events) {
+  if (!schedule || !Array.isArray(schedule)) {
     return (
       <View style={styles.container}>
         <FlatList
@@ -144,10 +144,10 @@ export default function CalendarTab({
 
   // Filter events based on selected view
   const filteredEvents = selectedView === 'upcoming' 
-    ? schedule.events.filter((event: F1Event) => new Date(event.date) >= new Date())
-    : schedule.events;
+    ? schedule.filter((event: any) => new Date(event.date) >= new Date())
+    : schedule;
 
-  const renderRaceCard = ({ item }: { item: F1Event }) => {
+  const renderRaceCard = ({ item }: { item: any }) => {
     const isNext = nextRace && item.round === nextRace.round;
     return <RaceCard event={item} isNext={isNext} />;
   };

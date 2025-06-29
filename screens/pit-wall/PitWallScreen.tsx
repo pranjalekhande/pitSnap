@@ -23,7 +23,7 @@ import {
 } from '../../services/storiesService';
 import { useAuth } from '../../contexts/AuthContext';
 import PitWallTabs from '../../components/pit-wall/PitWallTabs';
-import f1DataService, { type PitWallData } from '../../services/f1DataService';
+import f1DataService from '../../services/f1DataService';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -111,7 +111,8 @@ export default function PitWallScreen() {
   const [friendsWithStories, setFriendsWithStories] = useState<FriendWithStories[]>([]);
   const [myStories, setMyStories] = useState<Story[]>([]);
   // Note: pitWallItems state removed - handled by individual tabs
-  const [pitWallData, setPitWallData] = useState<PitWallData | null>(null);
+  const [pitWallData, setPitWallData] = useState<any>(null);
+  const [championshipStandings, setChampionshipStandings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [storiesLoading, setStoriesLoading] = useState(true);
@@ -135,12 +136,28 @@ export default function PitWallScreen() {
     }
   }, []);
 
-  // OPTIMIZED: Single batch API call for all F1 data
+  // OPTIMIZED: Load F1 data and championship standings separately
   const loadF1Data = useCallback(async () => {
     try {
       setF1DataLoading(true);
-      const data = await f1DataService.getPitWallData(); // Uses caching internally
-      setPitWallData(data);
+      const [pitWallData, standingsData] = await Promise.all([
+        f1DataService.getPitWallData(), // Pit wall data (schedule, next race, etc.)
+        f1DataService.getDriverStandings() // Championship standings separately
+      ]);
+      
+      setPitWallData(pitWallData);
+      
+      // Transform standings data to match expected format for StandingsTab
+      const transformedStandings = standingsData?.results ? {
+        drivers: standingsData.results.map((result: any) => ({
+          position: result.position,
+          driver: result.driver,
+          team: result.team,
+          points: result.points || 0
+        }))
+      } : null;
+      
+      setChampionshipStandings(transformedStandings);
     } catch (error) {
       console.error('Error loading F1 data:', error);
       Alert.alert('Error', 'Failed to load F1 data. Please try again.');
@@ -151,14 +168,10 @@ export default function PitWallScreen() {
 
   // Log championship standings data for debugging
   useEffect(() => {
-    if (!storiesLoading && !f1DataLoading && pitWallData) {
-      if (pitWallData.championship_standings) {
-        // Championship standings loaded
-      } else {
-                  // No championship standings data available
-      }
+    if (!storiesLoading && !f1DataLoading && championshipStandings) {
+      console.log('✅ Championship standings loaded:', championshipStandings?.drivers?.length || 0, 'drivers');
     }
-  }, [storiesLoading, f1DataLoading, pitWallData]);
+  }, [storiesLoading, f1DataLoading, championshipStandings]);
 
   // Update overall loading state
   useEffect(() => {
@@ -209,7 +222,7 @@ export default function PitWallScreen() {
     setRefreshing(true);
     try {
       // Force refresh F1 data (bypasses cache)
-      await f1DataService.forceRefresh();
+      await f1DataService.clearCache();
       await Promise.all([
         loadStoriesData(),
         loadF1Data(),
@@ -240,7 +253,10 @@ export default function PitWallScreen() {
       <PitWallTabs
         friendsWithStories={friendsWithStories}
         myStories={myStories}
-        pitWallData={pitWallData}
+        pitWallData={{
+          ...pitWallData,
+          championship_standings: championshipStandings
+        }}
         storiesLoading={storiesLoading}
         f1DataLoading={f1DataLoading}
         navigation={navigation}

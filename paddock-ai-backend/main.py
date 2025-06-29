@@ -170,6 +170,7 @@ prompt = ChatPromptTemplate.from_messages([
     - Maximum 100 words - NEVER cut off mid-sentence
     - ALWAYS finish your complete thought before stopping
     - Always mention which source provided the information
+    - **F1 TERMINOLOGY**: Distinguish between "race winner" (won latest GP) and "championship leader" (most points)
 
     **WORKFLOW:**
     1. Try f1_knowledge_base FIRST for any F1 question
@@ -336,6 +337,27 @@ def get_standings():
         return f1_service.get_current_standings()
     except Exception as e:
         return {"error": f"Failed to fetch standings: {str(e)}"}
+
+@app.get("/f1/championship-leader")
+def get_championship_leader():
+    """
+    Get current F1 championship leader (different from race winner)
+    """
+    try:
+        fallback = f1_service._get_fallback_data()
+        leader_data = fallback["data"]["championship_leader"]
+        standings_data = fallback["data"]["championship_standings"]
+        
+        return {
+            "championship_leader": leader_data["driver"],
+            "team": leader_data["team"], 
+            "points": leader_data["points"],
+            "lead_margin": leader_data["lead_over_second"],
+            "latest_race_winner": fallback["data"]["latest_race"]["race_winner"],
+            "note": "Championship leader (most points) is different from latest race winner"
+        }
+    except Exception as e:
+        return {"error": f"Failed to fetch championship leader: {str(e)}"}
 
 @app.get("/f1/pit-wall-data")
 def get_pit_wall_data():

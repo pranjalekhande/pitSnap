@@ -441,8 +441,9 @@ If you cannot find current data, return {"success": false, "error": "reason"}'''
                 ],
                 "latest_race": {
                     "name": "Austrian Grand Prix",
-                    "date": "2025-06-29",
-                    "winner": "Lando Norris",
+                    "date": "2025-06-29", 
+                    "race_winner": "Lando Norris",  # Winner of this specific race
+                    "winner": "Lando Norris",  # Keep for backward compatibility
                     "results": [
                         {"position": 1, "driver": "Lando Norris", "team": "McLaren", "time": "1:23:47.693", "points": 25},
                         {"position": 2, "driver": "Oscar Piastri", "team": "McLaren", "time": "+2.695s", "points": 18},
@@ -450,6 +451,12 @@ If you cannot find current data, return {"success": false, "error": "reason"}'''
                         {"position": 4, "driver": "Lewis Hamilton", "team": "Ferrari", "time": "+29.020s", "points": 12},
                         {"position": 5, "driver": "George Russell", "team": "Mercedes", "time": "+62.396s", "points": 10}
                     ]
+                },
+                "championship_leader": {
+                    "driver": "Oscar Piastri",  # Current championship leader
+                    "team": "McLaren", 
+                    "points": 216,
+                    "lead_over_second": 15  # 216 - 201 = 15 points ahead
                 },
                 "next_race": {
                     "name": "British Grand Prix",
@@ -461,32 +468,21 @@ If you cannot find current data, return {"success": false, "error": "reason"}'''
         }
     
     def get_latest_race_results(self):
-        """Get results from the most recent completed race using live data"""
+        """Get results from the most recent completed race using reliable fallback data"""
         try:
-            print("🔍 Fetching live F1 race results...")
+            print("🔍 Using reliable fallback data (live fetch temporarily disabled)")
             
-            # Try to get live data first
-            live_data = self._get_live_f1_data("latest F1 race results winner podium 2025")
+            # TEMP FIX: Skip unreliable live data, use fallback directly
+            fallback = self._get_fallback_data()
+            race_data = fallback["data"]["latest_race"]
             
-            if live_data.get("success") and live_data.get("data", {}).get("latest_race"):
-                race_data = live_data["data"]["latest_race"]
-                print(f"✅ Got live data for: {race_data.get('name', 'Unknown')}")
-                
-                return {
-                    'race': race_data.get('name', 'Latest Race'),
-                    'date': race_data.get('date', '2025-06-29T00:00:00'),
-                    'results': race_data.get('results', [])
-                }
-            else:
-                print("⚠️ Live data failed, using fallback...")
-                fallback = self._get_fallback_data()
-                race_data = fallback["data"]["latest_race"]
-                
-                return {
-                    'race': race_data['name'],
-                    'date': f"{race_data['date']}T00:00:00",
-                    'results': race_data['results']
-                }
+            print(f"✅ Using consistent fallback data for: {race_data['name']}")
+            
+            return {
+                'race': race_data['name'],  # Will be "Austrian Grand Prix"
+                'date': f"{race_data['date']}T00:00:00",
+                'results': race_data['results']
+            }
             
         except Exception as e:
             logger.error(f"Error fetching latest race results: {e}")
